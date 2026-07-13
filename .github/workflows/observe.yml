@@ -1,0 +1,69 @@
+# The observatory heartbeat: every 20 minutes, run a ~12-minute observation
+# burst, resolve arrivals, commit the graded record + refreshed site data.
+# Raw snapshots and engine state ride the Actions cache (they are working
+# memory, not the permanent record); only compact graded data enters git.
+
+name: Observe
+
+on:
+  schedule:
+    - cron: "*/20 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: observe
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -e .
+
+      - name: Restore working memory (raw window + truth-engine state)
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data/raw
+            data/state.json
+          key: overdue-state-${{ github.run_id }}
+          restore-keys: overdue-state-
+
+      - name: Observation burst (12 snapshots, 60 s apart)
+        env:
+          OVERDUE_511_KEY: ${{ secrets.OVERDUE_511_KEY }}
+        run: overdue observe --snapshots 12 --interval 60
+
+      - name: Prune raw snapshots older than 2 days
+        run: overdue prune
+
+      - name: Save working memory
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data/raw
+            data/state.json
+          key: overdue-state-${{ github.run_id }}
+
+      - name: Commit the graded record + site data
+        run: |
+          git config user.name "overdue-observatory"
+          git config user.email "actions@github.com"
+          git add data/graded docs/data
+          if git diff --cached --quiet; then
+            echo "nothing new to commit"
+          else
+            git commit -m "observe: $(date -u +'%Y-%m-%d %H:%M') UTC"
+            git pull --rebase origin main
+            git push
+          fi

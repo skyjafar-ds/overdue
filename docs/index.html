@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>overdue — the public record of transit promises</title>
+<meta name="description" content="Live arrivals for MBTA and BART, and the only public report card grading whether their predictions come true.">
+<link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="42" fill="%23081C2D"/><circle cx="50" cy="50" r="18" fill="%23FFB000"/><circle cx="50" cy="50" r="42" fill="none" stroke="%234A9EDE" stroke-width="6" stroke-dasharray="70 200"/></svg>'>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<canvas id="bg" aria-hidden="true"></canvas>
+
+<nav id="nav">
+  <a class="brand" href="#top">overdue<span class="brand-cursor">_</span></a>
+  <button id="search-open" class="nav-search" aria-label="Search stations (press /)">
+    <svg viewBox="0 0 24 24" class="ic"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+    <span>Search stations…</span><kbd>/</kbd>
+  </button>
+  <div class="nav-actions">
+    <button id="theme-toggle" class="icon-btn" aria-label="Toggle theme">
+      <svg viewBox="0 0 24 24" class="ic sun"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M19.1 4.9l-1.8 1.8M6.7 17.3l-1.8 1.8"/></svg>
+      <svg viewBox="0 0 24 24" class="ic moon"><path d="M20.5 14.5A8.5 8.5 0 1 1 9.5 3.5a7 7 0 0 0 11 11Z"/></svg>
+    </button>
+    <a class="icon-btn" href="https://github.com/skyjafar-ds/overdue" aria-label="GitHub repository">
+      <svg viewBox="0 0 24 24" class="ic"><path d="M12 2a10 10 0 0 0-3.2 19.5c.5.1.7-.2.7-.5v-1.8c-2.8.6-3.4-1.2-3.4-1.2-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.5 1 1.5 1 .9 1.6 2.4 1.1 3 .9.1-.7.4-1.1.6-1.4-2.2-.3-4.6-1.1-4.6-5A3.9 3.9 0 0 1 6.7 9a3.6 3.6 0 0 1 .1-2.7s.9-.3 2.8 1a9.5 9.5 0 0 1 5 0c1.9-1.3 2.8-1 2.8-1a3.6 3.6 0 0 1 .1 2.7 3.9 3.9 0 0 1 1 2.7c0 3.9-2.4 4.7-4.6 5 .4.3.7.9.7 1.9v2.8c0 .3.2.6.7.5A10 10 0 0 0 12 2Z"/></svg>
+    </a>
+  </div>
+</nav>
+
+<main id="top">
+  <header class="hero">
+    <p class="eyebrow"><span class="live-dot" id="hero-dot"></span><span id="hero-status">connecting to live feeds…</span></p>
+    <h1>Every arrival prediction is a <em>promise</em>.<br>We keep the receipts.</h1>
+    <p class="sub">Live arrivals for the <strong>MBTA</strong> and <strong>BART</strong> — and the only public
+    report card grading whether those predictions come true, rebuilt continuously by an
+    always-on observatory that costs $0 to run.</p>
+    <div class="search-wrap" id="search-wrap">
+      <svg viewBox="0 0 24 24" class="ic"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></svg>
+      <input id="search" type="text" placeholder="Search stations — try “Harvard” or “Embarcadero”"
+             autocomplete="off" role="combobox" aria-expanded="false" aria-controls="search-results">
+      <div id="search-results" role="listbox" hidden></div>
+    </div>
+  </header>
+
+  <section id="pulse" class="pulse" aria-label="Network pulse">
+    <!-- populated: one chip per line with live vehicle counts -->
+  </section>
+
+  <section id="live" class="section">
+    <div class="section-head">
+      <h2>Live board</h2>
+      <p class="section-sub">Pin stations with <span class="star-demo">☆</span> — favorites persist and load first. Countdowns tick in real time.</p>
+    </div>
+    <div id="board" class="board">
+      <div class="card skeleton" aria-hidden="true"></div>
+      <div class="card skeleton" aria-hidden="true"></div>
+      <div class="card skeleton" aria-hidden="true"></div>
+    </div>
+  </section>
+
+  <section id="grades" class="section">
+    <div class="section-head">
+      <h2>The report card</h2>
+      <p class="section-sub" id="grades-sub">When they say <em>x</em> minutes, how long do you actually wait?
+      Graded from the observatory’s promise-vs-reality record.</p>
+    </div>
+    <div id="grades-body" class="grades">
+      <div class="card skeleton tall" aria-hidden="true"></div>
+    </div>
+  </section>
+
+  <section id="method" class="section">
+    <div class="section-head"><h2>How the observatory works</h2></div>
+    <div class="method-grid">
+      <div class="mcard">
+        <div class="mnum">01</div><h3>Log the promise</h3>
+        <p>A scheduled GitHub Actions job polls the agencies’ public GTFS-realtime feeds in
+        bursts, recording every “arriving in <em>x</em> minutes” with its timestamp.</p>
+      </div>
+      <div class="mcard">
+        <div class="mnum">02</div><h3>Infer the truth</h3>
+        <p>Feeds never announce arrivals, so the arrival is inferred: a prediction tracked to
+        short range that then disappears from consecutive snapshots. Every inferred arrival
+        carries an uncertainty, and only tight ones (≤120s) are graded — coverage is reported,
+        not assumed.</p>
+      </div>
+      <div class="mcard">
+        <div class="mnum">03</div><h3>Publish the record</h3>
+        <p>Promise-vs-reality pairs accumulate into calibration curves and report cards on this
+        page, rebuilt after every poll. The raw method, tests, and data are public.</p>
+      </div>
+    </div>
+    <p class="fineprint" id="freshness-line">Observatory status: loading…</p>
+  </section>
+</main>
+
+<footer>
+  <span>overdue — an open observatory by <a href="https://github.com/skyjafar-ds">skyjafar-ds</a></span>
+  <span class="stack">GitHub Actions cron → GTFS-realtime → truth inference → GitHub Pages · <strong class="zero">$0 infra</strong></span>
+</footer>
+
+<nav class="bottom-nav" aria-label="Sections">
+  <a href="#live"><svg viewBox="0 0 24 24" class="ic"><rect x="4" y="3" width="16" height="14" rx="3"/><path d="M8 21h8M12 17v4"/></svg>Live</a>
+  <a href="#grades"><svg viewBox="0 0 24 24" class="ic"><path d="M4 19V5M4 19h16M8 15v-4M13 15V8M18 15v-7"/></svg>Grades</a>
+  <a href="#method"><svg viewBox="0 0 24 24" class="ic"><circle cx="12" cy="12" r="9"/><path d="M12 8v4l2.5 2.5"/></svg>Method</a>
+</nav>
+
+<div id="toasts" aria-live="polite"></div>
+<script src="app.js"></script>
+</body>
+</html>
