@@ -54,24 +54,22 @@
     rest on a line to follow its trains. Or scrub time backward and replay the day.</p>
     <div class="plate reveal">
       <div class="plate-tools">
-        <div class="mode" role="tablist" aria-label="Map mode">
-          <button id="mode-live" role="tab" aria-selected="true">Live</button>
-          <button id="mode-replay" role="tab" aria-selected="false">Replay the day</button>
+        <div class="zoom-tools" aria-label="Map camera">
+          <button id="zoom-in" aria-label="Zoom in">+</button>
+          <button id="zoom-out" aria-label="Zoom out">−</button>
+          <button id="zoom-reset" aria-label="Reset view">⌂</button>
         </div>
-        <div class="replay-tools" id="replay-tools" hidden>
-          <button id="replay-play" aria-label="Play or pause replay">▶</button>
-          <input id="replay-slider" type="range" min="0" max="100" value="0" aria-label="Time of day">
-          <span class="mono" id="replay-clock">—:—</span>
-        </div>
+        <span class="tool-hint">scroll to zoom · drag to pan · click a train or station</span>
         <div class="heartbeat" id="heartbeat" aria-label="Network heartbeat"></div>
       </div>
       <svg id="map" viewBox="0 0 1000 760" role="img" aria-label="Live map of MBTA rapid transit">
         <text x="500" y="380" text-anchor="middle">surveying the network…</text>
       </svg>
+      <div class="map-tip" id="map-tip" aria-hidden="true"></div>
       <div class="map-panel" id="map-panel"></div>
       <div class="plate-caption">
         <span class="fig">Fig. 1 — MBTA rapid transit, live</span>
-        <span id="map-caption">trains ride their lines between updates · click one for its dossier · replay observed in bursts</span>
+        <span id="map-caption">every mark is a real train, riding its line between feed updates</span>
       </div>
     </div>
   </section>
@@ -123,8 +121,9 @@
     <p class="kicker">Colophon — What This Edition Awaits</p>
     <div class="colophon">
       <ul>
-        <li><strong>Deeper replay.</strong> The observatory began recording train positions on
-          July 13, 2026; as the archive grows, Replay gains snowstorms, rush hours, and history.</li>
+        <li><strong>Replay Boston.</strong> The observatory has recorded train positions since
+          July 13, 2026; a proper replay viewer returns once the archive holds storms and
+          rush hours worth scrubbing.</li>
         <li><strong>Station encyclopedia.</strong> Reliability score, wait-time history, and
           peak-hour portraits per station — unlocked as each station accrues graded arrivals.</li>
         <li><strong>Delay forecasting.</strong> Probability a given promise holds, with honest

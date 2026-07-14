@@ -22,9 +22,21 @@ const state = {
   routes: {}, paths: [], stations: [], mbtaStops: {}, stopName: {},
   stationStats: {}, summary: null, days: [],
   pins: new Set(JSON.parse(localStorage.getItem("overdue-pins") || "[]")),
-  boards: [], trains: new Map(), mode: "live",
-  replay: null, replayTimer: null, mpp: 1, proj: null,
+  boards: [], trains: new Map(), mpp: 1, proj: null, pinned: null,
 };
+
+/* The camera: a viewBox that eases toward its target every frame. */
+const cam = { x: 0, y: 0, w: 1000, h: 760, tx: 0, ty: 0, tw: 1000, th: 760 };
+function camReset() { Object.assign(cam, { tx: 0, ty: 0, tw: 1000, th: 760 }); }
+function camZoom(fx, fy, factor) {
+  const w = Math.max(150, Math.min(1000, cam.tw * factor));
+  const k = w / cam.tw;
+  cam.tx = fx - (fx - cam.tx) * k;
+  cam.ty = fy - (fy - cam.ty) * k;
+  cam.tw = w; cam.th = cam.th * k;
+  cam.tx = Math.max(-80, Math.min(1080 - cam.tw, cam.tx));
+  cam.ty = Math.max(-60, Math.min(820 - cam.th, cam.ty));
+}
 
 /* ---------------- masthead ---------------- */
 (function masthead() {
@@ -170,34 +182,119 @@ async function buildMap() {
     casings += `<path class="rail-casing" d="${d}" stroke-width="7"/>`;
     rails += `<path class="rail" data-route="${p.route}" d="${d}" stroke="${state.routes[p.route].color}" stroke-width="3.4"><title>${state.routes[p.route].name} Line</title></path>`;
   }
-  const stns = all
-    .map((s) => {
-      const [x, y] = proj(s.lat, s.lon);
-      return `<circle class="stn" data-name="${esc(s.name)}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${s.routes.size > 1 ? 5 : 3.2}"/>`;
-    })
-    .join("");
-  svg.innerHTML = `<g id="g-rails">${casings}${rails}</g><g id="g-trains"></g><g id="g-stns">${stns}</g>`;
+  let stns = "", hits = "", lbls = "";
+  for (const s of all) {
+    const [x, y] = proj(s.lat, s.lon);
+    const X = x.toFixed(1), Y = y.toFixed(1);
+    stns += `<circle class="stn" data-name="${esc(s.name)}" cx="${X}" cy="${Y}" r="${s.routes.size > 1 ? 5 : 3.2}"/>`;
+    hits += `<circle class="hit" data-kind="stn" data-name="${esc(s.name)}" cx="${X}" cy="${Y}" r="11"/>`;
+    if (s.routes.size > 1) lbls += `<text class="lbl" x="${(x + 8).toFixed(1)}" y="${(y - 7).toFixed(1)}">${esc(s.name)}</text>`;
+  }
+  svg.innerHTML =
+    `<g id="g-rails">${casings}${rails}</g><g id="g-stns">${stns}</g>` +
+    `<g id="g-lbls">${lbls}</g><g id="g-hits">${hits}</g><g id="g-trains"></g>`;
+  wireMapInput(svg);
+  await refreshVehicles();
+  setInterval(refreshVehicles, REFRESH_S * 1000);
+  requestAnimationFrame(animate);
+}
 
+/* ---------------- input: camera + hover + selection ---------------- */
+function svgPoint(svg, cx, cy) {
+  const r = svg.getBoundingClientRect();
+  return [cam.x + ((cx - r.left) / r.width) * cam.w, cam.y + ((cy - r.top) / r.height) * cam.h];
+}
+
+function wireMapInput(svg) {
+  const pointers = new Map();
+  let moved = 0, pinchD = 0;
+
+  svg.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const [fx, fy] = svgPoint(svg, e.clientX, e.clientY);
+    camZoom(fx, fy, e.deltaY > 0 ? 1.16 : 1 / 1.16);
+  }, { passive: false });
+
+  svg.addEventListener("pointerdown", (e) => {
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    moved = 0;
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      pinchD = Math.hypot(a.x - b.x, a.y - b.y);
+    }
+  });
+  addEventListener("pointermove", (e) => {
+    const p = pointers.get(e.pointerId);
+    if (!p) return;
+    const dx = e.clientX - p.x, dy = e.clientY - p.y;
+    moved += Math.abs(dx) + Math.abs(dy);
+    if (pointers.size === 1 && moved > 4) {
+      svg.classList.add("panning");
+      const r = svg.getBoundingClientRect();
+      cam.tx -= (dx / r.width) * cam.w;
+      cam.ty -= (dy / r.height) * cam.h;
+    } else if (pointers.size === 2) {
+      const other = [...pointers.entries()].find(([id]) => id !== e.pointerId)?.[1];
+      if (other) {
+        const d = Math.hypot(e.clientX - other.x, e.clientY - other.y);
+        if (pinchD > 0 && d > 0) {
+          const [fx, fy] = svgPoint(svg, (e.clientX + other.x) / 2, (e.clientY + other.y) / 2);
+          camZoom(fx, fy, pinchD / d);
+        }
+        pinchD = d;
+      }
+    }
+    p.x = e.clientX; p.y = e.clientY;
+  });
+  addEventListener("pointerup", (e) => {
+    pointers.delete(e.pointerId);
+    if (!pointers.size) svg.classList.remove("panning");
+  });
+  addEventListener("pointercancel", (e) => pointers.delete(e.pointerId));
+
+  svg.addEventListener("dblclick", (e) => {
+    const [fx, fy] = svgPoint(svg, e.clientX, e.clientY);
+    camZoom(fx, fy, 1 / 1.7);
+  });
+  $("#zoom-in").addEventListener("click", () => camZoom(cam.tx + cam.tw / 2, cam.ty + cam.th / 2, 1 / 1.4));
+  $("#zoom-out").addEventListener("click", () => camZoom(cam.tx + cam.tw / 2, cam.ty + cam.th / 2, 1.4));
+  $("#zoom-reset").addEventListener("click", camReset);
+
+  // hover: a tooltip that can never block; selection: click to pin a panel
   svg.addEventListener("mouseover", (e) => {
-    const rail = e.target.closest(".rail");
-    if (rail) dimExcept(rail.dataset.route);
-    const stn = e.target.closest(".stn");
-    if (stn) showStationPanel(stn);
-    const train = e.target.closest(".train");
-    if (train) dimExcept(train.dataset.route);
+    const hit = e.target.closest(".hit");
+    const rail = !hit && e.target.closest(".rail");
+    if (rail) return dimExcept(rail.dataset.route);
+    if (!hit) return;
+    if (hit.dataset.kind === "train") {
+      const t = state.trains.get(hit.dataset.vid);
+      if (t?.meta) {
+        dimExcept(t.meta.route);
+        showTip(e.clientX, e.clientY,
+          `${state.routes[t.meta.route]?.name || t.meta.route} Line · to ${state.routes[t.meta.route]?.destinations?.[t.meta.dir] || "—"}`);
+      }
+    } else {
+      const st = state.mbtaStops[hit.dataset.name];
+      const rec = st?.ids.map((id) => state.stationStats[`mbta:${id}`]).find(Boolean);
+      showTip(e.clientX, e.clientY,
+        hit.dataset.name + (rec ? ` · keeps ${Math.round(rec.within_1min * 100)}%` : ""));
+      $$(`#map .stn[data-name="${CSS.escape(hit.dataset.name)}"]`).forEach((el) => el.classList.add("hot"));
+    }
   });
   svg.addEventListener("mouseout", (e) => {
-    if (e.target.closest(".rail") || e.target.closest(".train")) dimExcept(null);
+    if (e.target.closest(".rail") || e.target.closest(".hit")) {
+      if (!state.pinned) dimExcept(null);
+      hideTip();
+      $$("#map .stn.hot").forEach((el) => el.classList.remove("hot"));
+    }
   });
   svg.addEventListener("click", (e) => {
-    const train = e.target.closest(".train");
-    if (train) showTrainPanel(train.dataset.vid);
+    if (moved > 6) return; // it was a drag, not a click
+    const hit = e.target.closest(".hit");
+    if (!hit) return closePanel();
+    if (hit.dataset.kind === "train") showTrainPanel(hit.dataset.vid, e.clientX, e.clientY);
+    else showStationPanel(hit.dataset.name, e.clientX, e.clientY);
   });
-  svg.addEventListener("mouseleave", hidePanel);
-
-  await refreshVehicles();
-  setInterval(() => state.mode === "live" && refreshVehicles(), REFRESH_S * 1000);
-  requestAnimationFrame(animate);
 }
 
 function dimExcept(route) {
@@ -216,16 +313,23 @@ function snap(route, x, y) {
 }
 
 function makeTrainEl(vid, route) {
-  const el = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-  el.setAttribute("class", "train");
-  el.dataset.route = route;
-  el.dataset.vid = vid;
-  el.setAttribute("r", "4.6");
-  el.setAttribute("fill", state.routes[route]?.color || "#555");
-  el.setAttribute("stroke", "var(--paper2)");
-  el.setAttribute("stroke-width", "1.4");
-  $("#g-trains").append(el);
-  return el;
+  const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+  g.setAttribute("class", "train");
+  g.dataset.route = route;
+  const dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  dot.setAttribute("class", "train-dot");
+  dot.setAttribute("r", "4.6");
+  dot.setAttribute("fill", state.routes[route]?.color || "#555");
+  dot.setAttribute("stroke", "var(--paper2)");
+  dot.setAttribute("stroke-width", "1.4");
+  const hit = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  hit.setAttribute("class", "hit");
+  hit.setAttribute("r", "12");
+  hit.dataset.kind = "train";
+  hit.dataset.vid = vid;
+  g.append(dot, hit);
+  $("#g-trains").append(g);
+  return g;
 }
 
 async function refreshVehicles() {
@@ -269,22 +373,43 @@ async function refreshVehicles() {
   }
 }
 
-/* One clock moves everything: linear glide to the last-known target with
-   25% dead-reckoning past it, so trains never freeze and never jump. */
+/* One clock moves everything: trains glide linearly to their last-known
+   target with 25% dead-reckoning past it, and the camera eases toward its
+   own target — never a hop, never a jolt. */
 function animate(now) {
   for (const t of state.trains.values()) {
     const dur = (t.dur || REFRESH_S) * 1000;
     const u = Math.min(1.25, (now - t.t0) / dur);
     t.s = t.sFrom + (t.sTarget - t.sFrom) * (reduced ? Math.min(1, u) : u);
     const [x, y] = t.pattern.path.pointAt(t.s);
-    t.el.setAttribute("cx", x.toFixed(1));
-    t.el.setAttribute("cy", y.toFixed(1));
+    t.el.setAttribute("transform", `translate(${x.toFixed(1)},${y.toFixed(1)})`);
+  }
+  const ease = reduced ? 1 : 0.16;
+  if (Math.abs(cam.x - cam.tx) + Math.abs(cam.y - cam.ty) + Math.abs(cam.w - cam.tw) > 0.05) {
+    cam.x += (cam.tx - cam.x) * ease;
+    cam.y += (cam.ty - cam.y) * ease;
+    cam.w += (cam.tw - cam.w) * ease;
+    cam.h += (cam.th - cam.h) * ease;
+    const svg = $("#map");
+    svg.setAttribute("viewBox", `${cam.x.toFixed(1)} ${cam.y.toFixed(1)} ${cam.w.toFixed(1)} ${cam.h.toFixed(1)}`);
+    svg.classList.toggle("zoomed", cam.w < 620);
   }
   requestAnimationFrame(animate);
 }
 
-/* ---------------- panels ---------------- */
+/* ---------------- tooltip + pinned panels ---------------- */
 let panelToken = 0;
+
+function showTip(clientX, clientY, text) {
+  const tip = $("#map-tip");
+  const plate = tip.closest(".plate").getBoundingClientRect();
+  tip.textContent = text;
+  tip.style.left = clientX - plate.left + "px";
+  tip.style.top = clientY - plate.top - 30 + "px";
+  tip.classList.add("show");
+}
+function hideTip() { $("#map-tip").classList.remove("show"); }
+
 function placePanel(clientX, clientY) {
   const panel = $("#map-panel");
   const plate = panel.closest(".plate").getBoundingClientRect();
@@ -293,15 +418,24 @@ function placePanel(clientX, clientY) {
   panel.classList.add("show");
   return panel;
 }
-function hidePanel() { $("#map-panel").classList.remove("show"); }
+function closePanel() {
+  state.pinned = null;
+  $("#map-panel").classList.remove("show");
+  dimExcept(null);
+}
+document.addEventListener("click", (e) => {
+  if (e.target.closest(".map-panel .close")) closePanel();
+});
+addEventListener("keydown", (e) => { if (e.key === "Escape") closePanel(); });
+const CLOSE_BTN = `<button class="close" aria-label="Close">✕</button>`;
 
-async function showStationPanel(circle) {
-  const name = circle.dataset.name;
+async function showStationPanel(name, cx, cy) {
   const st = state.mbtaStops[name];
   if (!st) return;
+  hideTip();
+  state.pinned = { kind: "stn", name };
   const token = ++panelToken;
-  const c = circle.getBoundingClientRect();
-  const panel = placePanel(c.left, c.top);
+  const panel = placePanel(cx, cy);
   const marks = [...st.routes]
     .map((r) => `<span class="line-mark" style="--lc:${state.routes[r].color}">${r.startsWith("Green") ? r.slice(-1) : r[0]}</span>`)
     .join(" ");
@@ -309,7 +443,7 @@ async function showStationPanel(circle) {
   const hist = rec
     ? `keeps ${Math.round(rec.within_1min * 100)}% of promises · median miss ${rec.median_err} min · n=${rec.n}`
     : "record accruing for this station";
-  panel.innerHTML = `<h4>${esc(name)}</h4>
+  panel.innerHTML = `${CLOSE_BTN}<h4>${esc(name)}</h4>
     <div class="hist">${marks}${st.acc === 1 ? " · step-free" : ""}</div>
     <div class="hist">${hist}</div><div class="rows"><em>listening…</em></div>`;
   try {
@@ -328,12 +462,14 @@ async function showStationPanel(circle) {
   } catch { if (token === panelToken) $(".rows", panel).innerHTML = "<em>board unavailable</em>"; }
 }
 
-function showTrainPanel(vid) {
+function showTrainPanel(vid, cx, cy) {
   const t = state.trains.get(vid);
   if (!t?.meta) return;
+  hideTip();
   panelToken++;
-  const rect = t.el.getBoundingClientRect();
-  const panel = placePanel(rect.left, rect.top);
+  state.pinned = { kind: "train", vid };
+  dimExcept(t.meta.route);
+  const panel = placePanel(cx, cy);
   const m = t.meta;
   const heading = state.routes[m.route]?.destinations?.[m.dir] || "—";
   const dirSign = t.pattern.dir === m.dir ? 1 : -1;
@@ -345,7 +481,7 @@ function showTrainPanel(vid) {
   const lineRec = state.summary?.agencies?.mbta?.routes?.[m.route];
   const punct = lineRec ? `${Math.round(lineRec.within_1min * 100)}% of promises kept (median miss ${lineRec.median_abs_err} min)` : "record accruing";
   const kmh = m.speed > 0.4 ? (m.speed * 3.6).toFixed(0) : "0";
-  panel.innerHTML = `<h4><span class="line-mark" style="--lc:${state.routes[m.route]?.color}">${m.route.startsWith("Green") ? m.route.slice(-1) : m.route[0]}</span>
+  panel.innerHTML = `${CLOSE_BTN}<h4><span class="line-mark" style="--lc:${state.routes[m.route]?.color}">${m.route.startsWith("Green") ? m.route.slice(-1) : m.route[0]}</span>
       &nbsp;${esc(state.routes[m.route]?.name || m.route)} Line · to ${esc(heading)}</h4>
     <div class="kv"><span>now</span><b>${status} ${esc(next?.name || "terminus")}</b></div>
     <div class="kv"><span>previous</span><b>${esc(prev?.name || "—")}</b></div>
@@ -376,73 +512,6 @@ async function renderHeartbeat() {
   } catch { /* chips absent */ }
 }
 
-/* ---------------- replay ---------------- */
-async function setMode(mode) {
-  state.mode = mode;
-  $("#mode-live").setAttribute("aria-selected", String(mode === "live"));
-  $("#mode-replay").setAttribute("aria-selected", String(mode === "replay"));
-  $("#replay-tools").hidden = mode !== "replay";
-  if (mode === "replay" && !state.replay) {
-    try {
-      state.replay = await jget("data/replay.json");
-      $("#replay-slider").max = state.replay.bins - 1;
-      $("#map-caption").textContent =
-        `replaying from ${new Date(state.replay.start * 1000).toLocaleString()} · observed in bursts, gaps interpolated`;
-    } catch {
-      $("#map-caption").textContent = "the replay archive publishes with the observatory's next runs";
-      return;
-    }
-  }
-  for (const [vid, t] of state.trains) { t.el.remove(); state.trains.delete(vid); }
-  if (mode === "replay") renderReplayBin(+$("#replay-slider").value, true);
-  else { stopReplay(); refreshVehicles(); }
-}
-function stopReplay() {
-  clearInterval(state.replayTimer);
-  state.replayTimer = null;
-  $("#replay-play").textContent = "▶";
-}
-function renderReplayBin(bin, jump = false) {
-  const rp = state.replay;
-  if (!rp) return;
-  $("#replay-clock").textContent = fmtClock(rp.start + bin * rp.bin_s);
-  const now = performance.now();
-  const seen = new Set();
-  for (const [vid, v] of Object.entries(rp.vehicles)) {
-    let best = null;
-    for (const [b, lat, lon] of v.pts) {
-      if (b <= bin) best = [b, lat, lon];
-      else break;
-    }
-    if (!best || bin - best[0] > 5) continue;
-    const [x, y] = state.proj(best[1], best[2]);
-    const hit = snap(v.route, x, y);
-    if (!hit) continue;
-    seen.add("r" + vid);
-    let t = state.trains.get("r" + vid);
-    if (!t || jump || hit.pattern !== t.pattern) {
-      if (!t) t = { el: makeTrainEl("r" + vid, v.route) };
-      Object.assign(t, { pattern: hit.pattern, s: hit.s, sFrom: hit.s, sTarget: hit.s, t0: now, dur: 0.14 });
-      state.trains.set("r" + vid, t);
-    } else {
-      t.sFrom = t.s; t.sTarget = hit.s; t.t0 = now; t.dur = 0.15;
-    }
-  }
-  for (const [vid, t] of state.trains)
-    if (!seen.has(vid)) { t.el.remove(); state.trains.delete(vid); }
-}
-$("#mode-live").addEventListener("click", () => setMode("live"));
-$("#mode-replay").addEventListener("click", () => setMode("replay"));
-$("#replay-slider").addEventListener("input", (e) => renderReplayBin(+e.target.value, true));
-$("#replay-play").addEventListener("click", () => {
-  if (state.replayTimer) return stopReplay();
-  $("#replay-play").textContent = "❚❚";
-  state.replayTimer = setInterval(() => {
-    const s = $("#replay-slider");
-    s.value = (+s.value + 1) % (+s.max + 1);
-    renderReplayBin(+s.value);
-  }, 150);
-});
 
 /* ================= BOARDS (unchanged grammar) ================= */
 

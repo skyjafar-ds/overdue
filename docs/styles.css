@@ -109,18 +109,18 @@ h2 { font-family: var(--serif); font-weight: 500; font-size: clamp(26px, 3.4vw, 
 .today .note { font-size: 12.5px; color: var(--ink2); margin-top: 2px; }
 
 /* ---------- the map plate ---------- */
-.plate-tools { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; margin-bottom: 10px; }
-.mode { display: inline-flex; border: 1px solid var(--hairline); border-radius: 3px; overflow: hidden; }
-.mode button {
-  background: none; border: 0; padding: 6px 14px; cursor: pointer; color: var(--ink2);
-  font: 13px var(--sans); letter-spacing: .04em; transition: background .25s, color .25s;
+.plate-tools { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 10px; }
+.zoom-tools { display: inline-flex; border: 1px solid var(--hairline); border-radius: 3px; overflow: hidden; }
+.zoom-tools button {
+  background: none; border: 0; border-right: 1px solid var(--hairline);
+  width: 34px; height: 28px; cursor: pointer; color: var(--ink2);
+  font: 500 15px var(--mono); transition: background .2s, color .2s;
 }
-.mode button[aria-selected="true"] { background: var(--ink); color: var(--paper); }
-.replay-tools { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 240px; }
-.replay-tools button { background: none; border: 1px solid var(--hairline); border-radius: 3px;
-  width: 30px; height: 26px; cursor: pointer; color: var(--ink); font-size: 11px; }
-.replay-tools input[type="range"] { flex: 1; accent-color: var(--brick); }
-.replay-tools .mono { font-size: 13px; color: var(--ink2); min-width: 52px; }
+.zoom-tools button:last-child { border-right: 0; }
+.zoom-tools button:hover { background: color-mix(in srgb, var(--tan) 25%, transparent); color: var(--ink); }
+.zoom-tools button:active { background: var(--ink); color: var(--paper); }
+.tool-hint { font-size: 12px; color: var(--faded); }
+@media (max-width: 640px) { .tool-hint { display: none; } }
 
 .plate {
   background: var(--paper2); border: 1px solid var(--hairline); box-shadow: var(--shadow);
@@ -131,13 +131,28 @@ h2 { font-family: var(--serif); font-weight: 500; font-size: clamp(26px, 3.4vw, 
 .plate-caption { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;
   font-size: 12.5px; color: var(--faded); margin-top: 12px; }
 .plate-caption .fig { letter-spacing: .12em; text-transform: uppercase; }
-#map { width: 100%; height: auto; display: block; }
+#map { width: 100%; height: auto; display: block; cursor: grab; touch-action: none; }
+#map.panning { cursor: grabbing; }
 #map .rail { fill: none; stroke-linecap: round; stroke-linejoin: round; opacity: .9; }
 #map .rail-casing { fill: none; stroke: var(--paper2); stroke-linecap: round; }
-#map .stn { fill: var(--paper2); stroke: var(--ink2); stroke-width: 1.1; cursor: pointer; transition: r .2s ease, stroke .2s ease; }
-#map .stn:hover, #map .stn.active { stroke: var(--ink); stroke-width: 2; }
-#map .train { transition: cx 4s linear, cy 4s linear; }
-#map text { font-family: var(--mono); font-size: 10.5px; fill: var(--faded); }
+#map .stn { fill: var(--paper2); stroke: var(--ink2); stroke-width: 1.1; pointer-events: none; }
+#map .stn.hot { stroke: var(--ink); stroke-width: 2.2; }
+#map .hit { fill: transparent; pointer-events: all; cursor: pointer; }
+#map .train-dot { pointer-events: none; }
+#map .lbl {
+  font-family: var(--mono); font-size: 9px; fill: var(--ink2); paint-order: stroke;
+  stroke: var(--paper2); stroke-width: 2.4px; pointer-events: none;
+  opacity: 0; transition: opacity .35s ease;
+}
+#map.zoomed .lbl { opacity: 1; }
+#map text.note { font-family: var(--mono); font-size: 10.5px; fill: var(--faded); }
+.map-tip {
+  position: absolute; z-index: 6; pointer-events: none;
+  background: var(--ink); color: var(--paper); font: 11.5px var(--mono);
+  padding: 4px 9px; border-radius: 3px; white-space: nowrap;
+  opacity: 0; transform: translate(-50%, 4px); transition: opacity .15s ease, transform .15s ease;
+}
+.map-tip.show { opacity: 1; transform: translate(-50%, 0); }
 .map-panel {
   position: absolute; z-index: 5; min-width: 250px; max-width: 320px;
   background: var(--paper2); border: 1px solid var(--hairline); border-radius: 4px;
@@ -150,7 +165,11 @@ h2 { font-family: var(--serif); font-weight: 500; font-size: clamp(26px, 3.4vw, 
   border-top: 1px dotted var(--hairline); font-size: 12.5px; }
 .map-panel .kv:first-of-type { border-top: 0; }
 .map-panel .kv b { font-family: var(--mono); font-weight: 500; }
-#map .train { cursor: pointer; }
+.map-panel .close {
+  position: absolute; top: 6px; right: 8px; background: none; border: 0; cursor: pointer;
+  color: var(--faded); font: 14px var(--sans); line-height: 1; padding: 4px;
+}
+.map-panel .close:hover { color: var(--brick); }
 
 /* network heartbeat */
 .heartbeat { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
