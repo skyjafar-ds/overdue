@@ -15,7 +15,8 @@ from pathlib import Path
 
 import numpy as np
 
-from .grade import MAX_UNC_S, grade
+from .grade import MAX_UNC_S, MIN_N, clean_samples, grade, sample_ok
+from .sanity import validate_site_data
 from .store import Store, day_str
 
 WINDOW_DAYS = 30
@@ -23,9 +24,9 @@ MAX_STATIONS = 400
 
 
 def _errs(rows: list[dict]) -> np.ndarray:
-    return np.asarray(
-        [float(w) - int(h) for r in rows for h, w in r["waits"].items()], dtype=float
-    )
+    """Signed errors (wait - promise), under the one shared outlier policy."""
+    kept, _ = clean_samples(rows)
+    return np.asarray([w - h for h, w in kept], dtype=float)
 
 
 def _days_json(trusted: list[dict]) -> list[dict]:
@@ -35,7 +36,8 @@ def _days_json(trusted: list[dict]) -> list[dict]:
     out = []
     for (agency, day), rows in sorted(by_day.items()):
         e = _errs(rows)
-        if not len(e):
+        # Floors count arrivals (matching the published "n"), not samples.
+        if len(rows) < MIN_N["day"] or not len(e):
             continue
         routes = defaultdict(int)
         for r in rows:
@@ -72,7 +74,12 @@ def _promise_cards(trusted: list[dict], n: int = 48) -> list[dict]:
         picked += [r for r in recent if r not in picked][: n * 2 - len(picked)]
     cards = []
     for r in picked:
-        h = max(int(k) for k in r["waits"])  # the boldest promise made
+        # The boldest promise that passes the outlier policy; a card built
+        # from an artifact sample would be a lie with nice typography.
+        sane = [int(k) for k in r["waits"] if sample_ok(int(k), float(r["waits"][k]))]
+        if not sane:
+            continue
+        h = max(sane)
         wait = float(r["waits"][str(h)])
         issued = int(r["truth"] - wait * 60)
         err = wait - h
@@ -105,7 +112,7 @@ def _stations_json(trusted: list[dict]) -> dict:
     out: dict[str, dict] = {}
     for (agency, stop), rows in ranked:
         e = _errs(rows)
-        if not len(e):
+        if len(rows) < MIN_N["station"] or not len(e):
             continue
         out[f"{agency}:{stop}"] = {
             "n": len(rows),
@@ -155,28 +162,31 @@ def build_site_data(store: Store, site_dir: Path, meta: dict | None = None) -> d
     trusted = [r for r in resolutions if r["unc"] <= MAX_UNC_S]
     summary = grade(resolutions)
     summary["window_days"] = WINDOW_DAYS
-    (data_dir / "summary.json").write_text(json.dumps(summary, separators=(",", ":")))
-    (data_dir / "days.json").write_text(json.dumps(_days_json(trusted), separators=(",", ":")))
-    (data_dir / "stations.json").write_text(
-        json.dumps(_stations_json(trusted), separators=(",", ":"))
-    )
-    (data_dir / "promises.json").write_text(
-        json.dumps(_promise_cards(trusted), separators=(",", ":"))
-    )
     today = day_str()
     today_errs = _errs([r for r in trusted if day_str(r["truth"]) == today])
+    enough_today = len(today_errs) >= MIN_N["today"]
     freshness = {
         "built": int(time.time()),
         "n_resolutions_window": len(resolutions),
         "record_begins": min((day_str(r["truth"]) for r in resolutions), default=None),
         "today": {
             "n_promises": int(len(today_errs)),
-            "worst_miss": round(float(today_errs.max()), 1) if len(today_errs) else None,
+            "worst_miss": round(float(today_errs.max()), 1) if enough_today else None,
             "kept_share": round(float((np.abs(today_errs) <= 1.0).mean()), 3)
-            if len(today_errs)
+            if enough_today
             else None,
         },
         **(meta or {}),
     }
+    days = _days_json(trusted)
+    stations = _stations_json(trusted)
+    promises = _promise_cards(trusted)
+    # The sanity contract: refuse to publish impossible numbers. A failed
+    # build is a visible failure; a nonsensical dashboard is a quiet one.
+    validate_site_data(summary, days, stations, promises, freshness)
+    (data_dir / "summary.json").write_text(json.dumps(summary, separators=(",", ":")))
+    (data_dir / "days.json").write_text(json.dumps(days, separators=(",", ":")))
+    (data_dir / "stations.json").write_text(json.dumps(stations, separators=(",", ":")))
+    (data_dir / "promises.json").write_text(json.dumps(promises, separators=(",", ":")))
     (data_dir / "freshness.json").write_text(json.dumps(freshness, separators=(",", ":")))
     return summary

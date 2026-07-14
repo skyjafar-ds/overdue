@@ -60,11 +60,11 @@ def _resolution(agency="mbta", route="Red", unc=30, waits=None, truth=None):
 
 
 def test_grade_bias_and_coverage():
-    rows = [_resolution() for _ in range(20)] + [_resolution(unc=MAX_UNC_S + 1) for _ in range(5)]
+    rows = [_resolution() for _ in range(40)] + [_resolution(unc=MAX_UNC_S + 1) for _ in range(10)]
     out = grade(rows)
     block = out["agencies"]["mbta"]
-    assert block["n_arrivals"] == 20
-    assert block["coverage"] == 0.8  # 20 of 25 trusted
+    assert block["n_arrivals"] == 40
+    assert block["coverage"] == 0.8  # 40 of 50 trusted
     by_h = {h["h"]: h for h in block["horizons"]}
     assert by_h[5]["bias"] == 1.0     # promised 5, waited 6
     assert by_h[10]["bias"] == 1.5
@@ -73,7 +73,7 @@ def test_grade_bias_and_coverage():
 
 
 def test_grade_ignores_thin_horizons():
-    rows = [_resolution(waits={"5": 5.0}) for _ in range(4)]  # below min n
+    rows = [_resolution(waits={"5": 5.0}) for _ in range(24)]  # below the 25 floor
     out = grade(rows)
     assert out["agencies"]["mbta"]["horizons"] == []
 

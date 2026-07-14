@@ -53,6 +53,28 @@ Known biases, stated plainly:
   cancellations) are excluded from grading and counted as rejected;
   agencies are therefore graded on the promises they kept *tracking*.
 
+## Outlier policy and sample floors
+
+One policy, defined once (`grade.py`), applied by every published surface —
+horizon curves, clock hours, almanac days, station records, promise cards,
+and today's figures:
+
+- A sample is **excluded** when the actual wait exceeds the promise by more
+  than 20 minutes, beats it by more than 15, is negative, or exceeds 90
+  minutes total. These are dominated by service-boundary artifacts
+  (overnight predictions for next-morning trips being reassigned), with
+  genuine major incidents mixed in; separating the two honestly requires
+  schedule data the observatory doesn't yet consume, so both are excluded
+  from aggregates and the exclusion **count is published** per agency.
+- Surfaces publish nothing below a minimum sample: 25 per horizon cell,
+  50 per clock hour, 25 per almanac day, 10 per station, 25 for today's
+  figures. Thin cells return as the record accrues rather than showing
+  noise.
+- The ledger itself stays raw and append-only: it records everything;
+  the grader judges under this policy. Every published build passes a
+  **sanity contract** (`sanity.py`) asserting these bounds — an impossible
+  number fails the observatory run instead of reaching the page.
+
 ## Grading
 
 For each resolved arrival, the promise trajectory is sampled at standard
