@@ -1,1 +1,1 @@
-{"built":1783982673,"n_resolutions_window":1674,"last_burst":1783982673,"burst_stats":{"mbta":{"snapshots":12,"promises":22357,"resolved":640,"errors":0},"bart":{"snapshots":12,"promises":7287,"resolved":190,"errors":0}},"engine_counters":{"resolved":1382,"rejected":2525,"stale":0},"pending_pairs":2542,"agencies":["mbta","bart"]}
+{"built":1783990239,"n_resolutions_window":1212,"record_begins":"2026-07-13","last_burst":null}

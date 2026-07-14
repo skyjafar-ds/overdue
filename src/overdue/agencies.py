@@ -22,6 +22,7 @@ class Agency:
     name: str
     trip_updates_url: str
     panel_routes: frozenset[str] | None  # None = every route in the feed
+    vehicles_url: str | None = None  # position feed powering the map replay
     extra_params: dict = field(default_factory=dict)
 
     def enabled(self) -> bool:
@@ -38,6 +39,7 @@ MBTA = Agency(
     panel_routes=frozenset(
         {"Red", "Orange", "Blue", "Mattapan", "Green-B", "Green-C", "Green-D", "Green-E"}
     ),
+    vehicles_url="https://cdn.mbta.com/realtime/VehiclePositions.pb",
 )
 
 BART = Agency(

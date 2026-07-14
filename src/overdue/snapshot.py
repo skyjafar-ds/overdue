@@ -43,6 +43,41 @@ def fetch_snapshot(agency: Agency, session: requests.Session | None = None) -> l
     return parse_feed(agency, feed, now=int(time.time()))
 
 
+def fetch_vehicles(agency: Agency, session: requests.Session | None = None) -> list[dict]:
+    """One snapshot of vehicle positions (powers the map's Replay archive)."""
+    if agency.vehicles_url is None:
+        return []
+    sess = session or requests
+    resp = sess.get(agency.vehicles_url, timeout=TIMEOUT_S)
+    resp.raise_for_status()
+    feed = gtfs_realtime_pb2.FeedMessage()
+    feed.ParseFromString(resp.content)
+    return parse_vehicles(agency, feed, now=int(time.time()))
+
+
+def parse_vehicles(agency: Agency, feed, now: int) -> list[dict]:
+    rows = []
+    for entity in feed.entity:
+        if not entity.HasField("vehicle"):
+            continue
+        v = entity.vehicle
+        route = v.trip.route_id or "system"
+        if agency.panel_routes is not None and route not in agency.panel_routes:
+            continue
+        if not v.HasField("position"):
+            continue
+        rows.append(
+            {
+                "ts": now,
+                "id": v.vehicle.id or entity.id,
+                "route": route,
+                "lat": round(v.position.latitude, 5),
+                "lon": round(v.position.longitude, 5),
+            }
+        )
+    return rows
+
+
 def parse_feed(agency: Agency, feed, now: int) -> list[Promise]:
     rows: list[Promise] = []
     for entity in feed.entity:

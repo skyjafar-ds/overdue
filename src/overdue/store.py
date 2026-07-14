@@ -52,6 +52,21 @@ class Store:
     def append_raw(self, agency: str, rows: list[dict], ts: int) -> None:
         append_jsonl_gz(self.raw_dir / day_str(ts) / f"{agency}.jsonl.gz", rows)
 
+    def append_traces(self, agency: str, rows: list[dict], ts: int) -> None:
+        append_jsonl_gz(self.raw_dir / day_str(ts) / f"vehicles-{agency}.jsonl.gz", rows)
+
+    def read_traces(self, agency: str, hours: int = 24) -> list[dict]:
+        cutoff = int(time.time()) - hours * 3600
+        out: list[dict] = []
+        for offset in (86400, 0):  # yesterday, then today
+            path = (
+                self.raw_dir
+                / day_str(int(time.time()) - offset)
+                / f"vehicles-{agency}.jsonl.gz"
+            )
+            out.extend(r for r in read_jsonl_gz(path) if r["ts"] >= cutoff)
+        return out
+
     def append_graded(self, agency: str, rows: list[dict], ts: int) -> None:
         append_jsonl_gz(self.graded_dir / f"{day_str(ts)}-{agency}.jsonl.gz", rows)
 

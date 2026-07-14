@@ -11,7 +11,7 @@ import requests
 
 from .agencies import active_agencies
 from .site import build_site_data
-from .snapshot import fetch_snapshot
+from .snapshot import fetch_snapshot, fetch_vehicles
 from .store import Store
 from .truth import TruthEngine
 
@@ -41,6 +41,11 @@ def observe(store: Store, site_dir: Path, snapshots: int, interval: int) -> dict
             resolved = engine.update(agency.id, rows, ts)
             if resolved:
                 store.append_graded(agency.id, [r.to_dict() for r in resolved], ts)
+            if agency.vehicles_url:
+                try:
+                    store.append_traces(agency.id, fetch_vehicles(agency, session), ts)
+                except Exception as e:  # noqa: BLE001 — replay is best-effort
+                    print(f"  {agency.id}: vehicles fetch failed ({type(e).__name__})")
             s = stats[agency.id]
             s["snapshots"] += 1
             s["promises"] += len(rows)
