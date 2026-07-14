@@ -1,7 +1,9 @@
-# The observatory heartbeat: every 20 minutes, run a ~12-minute observation
-# burst, resolve arrivals, commit the graded record + refreshed site data.
-# Raw snapshots and engine state ride the Actions cache (they are working
-# memory, not the permanent record); only compact graded data enters git.
+# The observatory heartbeat. GitHub throttles cron schedules heavily (they
+# can fire hourly or worse), so each run observes for ~30 minutes and then
+# dispatches its own successor — a self-perpetuating chain. The cron is the
+# backstop that revives the chain if a link ever fails. Raw snapshots and
+# engine state ride the Actions cache (working memory, not the permanent
+# record); only compact graded data enters git.
 
 name: Observe
 
@@ -16,11 +18,12 @@ concurrency:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   observe:
     runs-on: ubuntu-latest
-    timeout-minutes: 18
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -38,10 +41,10 @@ jobs:
           key: overdue-state-${{ github.run_id }}
           restore-keys: overdue-state-
 
-      - name: Observation burst (12 snapshots, 60 s apart)
+      - name: Observation burst (30 snapshots, 60 s apart)
         env:
           OVERDUE_511_KEY: ${{ secrets.OVERDUE_511_KEY }}
-        run: overdue observe --snapshots 12 --interval 60
+        run: overdue observe --snapshots 30 --interval 60
 
       - name: Prune raw snapshots older than 2 days
         run: overdue prune
@@ -67,3 +70,9 @@ jobs:
             git pull --rebase origin main
             git push
           fi
+
+      - name: Dispatch the next link in the chain
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run observe.yml -R ${{ github.repository }}

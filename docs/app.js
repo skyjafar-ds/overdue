@@ -115,6 +115,9 @@ async function jget(url) {
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }
+/* Ledger JSONs sit behind Pages' ~10-min cache; bust it in 2-min buckets so
+   an open tab sees new observations shortly after they land. */
+const dget = (path) => jget(`${path}?v=${Math.floor(Date.now() / 120_000)}`);
 
 /* ================= GEOMETRY ================= */
 
@@ -814,7 +817,7 @@ async function renderRecord() {
   const body = $("#record-body");
   const names = { mbta: "The MBTA", bart: "BART", caltrain: "Caltrain" };
   try {
-    const [summary, fresh] = await Promise.all([jget("data/summary.json"), jget("data/freshness.json")]);
+    const [summary, fresh] = await Promise.all([dget("data/summary.json"), dget("data/freshness.json")]);
     state.summary = summary;
     // One shared axis domain across every agency's figure.
     let maxH = 10, maxW = 10;
@@ -856,7 +859,7 @@ async function renderRecord() {
 /* ================= THE LEDGER ================= */
 async function renderLedger() {
   try {
-    const cards = await jget("data/promises.json");
+    const cards = await dget("data/promises.json");
     $("#ledger").innerHTML = cards.slice(0, 12).map((c) => {
       const where = state.stopName[c.stop] || (c.agency === "bart" ? `BART · ${c.stop}` : `stop ${c.stop}`);
       const line = c.agency === "mbta" ? (state.routes[c.route]?.name || c.route) : "BART";
@@ -877,7 +880,7 @@ async function renderLedger() {
 /* ================= ALMANAC ================= */
 async function renderAlmanac() {
   try {
-    const [days, summary] = await Promise.all([jget("data/days.json"), state.summary || jget("data/summary.json")]);
+    const [days, summary] = await Promise.all([dget("data/days.json"), state.summary || dget("data/summary.json")]);
     state.days = days;
     const byAgency = {};
     for (const d of days) (byAgency[d.agency] ||= []).push(d);
@@ -904,7 +907,7 @@ async function renderAlmanac() {
       }
     }
     try {
-      const fresh = await jget("data/freshness.json");
+      const fresh = await dget("data/freshness.json");
       if (fresh.today?.worst_miss != null)
         notes.push(`Today's longest broken promise so far ran <span class="num">${fresh.today.worst_miss}</span> minutes past its word.`);
       if (fresh.today?.kept_share != null)
@@ -942,7 +945,7 @@ document.addEventListener("click", (e) => {
   setInterval(renderHeartbeat, 90_000);
   mbtaFinderStations();
   await loadBartStations();
-  try { state.stationStats = await jget("data/stations.json"); } catch { /* accruing */ }
+  try { state.stationStats = await dget("data/stations.json"); } catch { /* accruing */ }
   for (const name of ["Park Street", "Harvard", "South Station"]) {
     const st = state.stations.find((s) => s.agency === "mbta" && s.name === name);
     if (st) state.boards.push(st.key);
@@ -951,4 +954,23 @@ document.addEventListener("click", (e) => {
   if (embr) state.boards.push(embr.key);
   renderBoards();
   setInterval(renderBoards, 35_000);
+
+  // An open tab keeps up with the observatory: when a new observation
+  // lands (freshness.json's build stamp changes), the record, ledger and
+  // almanac quietly re-render themselves.
+  let lastBuilt = 0;
+  setInterval(async () => {
+    try {
+      const fresh = await dget("data/freshness.json");
+      if (fresh.built && fresh.built !== lastBuilt) {
+        if (lastBuilt) {
+          renderRecord();
+          renderLedger();
+          renderAlmanac();
+          try { state.stationStats = await dget("data/stations.json"); } catch { /* keep old */ }
+        }
+        lastBuilt = fresh.built;
+      }
+    } catch { /* next poll */ }
+  }, 120_000);
 })();
