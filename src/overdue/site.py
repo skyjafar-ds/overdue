@@ -37,6 +37,10 @@ def _days_json(trusted: list[dict]) -> list[dict]:
         e = _errs(rows)
         if not len(e):
             continue
+        routes = defaultdict(int)
+        for r in rows:
+            routes[r["route"]] += 1
+        busiest = max(routes.items(), key=lambda kv: kv[1])[0]
         out.append(
             {
                 "agency": agency,
@@ -44,10 +48,49 @@ def _days_json(trusted: list[dict]) -> list[dict]:
                 "n": len(rows),
                 "median_err": round(float(np.median(np.abs(e))), 2),
                 "within_1min": round(float((np.abs(e) <= 1.0).mean()), 3),
+                "broken": round(float((e > 1.0).mean()), 3),
+                "worst_miss": round(float(e.max()), 1),
                 "bias": round(float(e.mean()), 2),
+                "busiest_route": busiest,
             }
         )
     return out
+
+
+def _promise_cards(trusted: list[dict], n: int = 48) -> list[dict]:
+    """The thesis, made tangible: recent promises as issued/predicted/reality.
+
+    Timestamps are reconstructed exactly from the ledger: a promise sampled
+    at horizon h with actual wait w was issued at truth - w*60 and
+    predicted arrival at issue + h*60.
+    """
+    recent = [r for r in sorted(trusted, key=lambda x: -x["truth"]) if r["waits"]]
+    # Prefer bold promises (>= 3 min); pad with short ones while the record
+    # is young rather than publish an empty shelf.
+    picked = [r for r in recent if max(int(k) for k in r["waits"]) >= 3][: n * 2]
+    if len(picked) < n:
+        picked += [r for r in recent if r not in picked][: n * 2 - len(picked)]
+    cards = []
+    for r in picked:
+        h = max(int(k) for k in r["waits"])  # the boldest promise made
+        wait = float(r["waits"][str(h)])
+        issued = int(r["truth"] - wait * 60)
+        cards.append(
+            {
+                "agency": r["agency"],
+                "route": r["route"],
+                "stop": r["stop"],
+                "issued": issued,
+                "promised_min": h,
+                "predicted": issued + h * 60,
+                "actual": r["truth"],
+                "err_min": round(wait - h, 1),
+                "kept": abs(wait - h) <= 1.0,
+            }
+        )
+        if len(cards) >= n:
+            break
+    return cards
 
 
 def _stations_json(trusted: list[dict]) -> dict:
@@ -113,10 +156,22 @@ def build_site_data(store: Store, site_dir: Path, meta: dict | None = None) -> d
     (data_dir / "stations.json").write_text(
         json.dumps(_stations_json(trusted), separators=(",", ":"))
     )
+    (data_dir / "promises.json").write_text(
+        json.dumps(_promise_cards(trusted), separators=(",", ":"))
+    )
+    today = day_str()
+    today_errs = _errs([r for r in trusted if day_str(r["truth"]) == today])
     freshness = {
         "built": int(time.time()),
         "n_resolutions_window": len(resolutions),
         "record_begins": min((day_str(r["truth"]) for r in resolutions), default=None),
+        "today": {
+            "n_promises": int(len(today_errs)),
+            "worst_miss": round(float(today_errs.max()), 1) if len(today_errs) else None,
+            "kept_share": round(float((np.abs(today_errs) <= 1.0).mean()), 3)
+            if len(today_errs)
+            else None,
+        },
         **(meta or {}),
     }
     (data_dir / "freshness.json").write_text(json.dumps(freshness, separators=(",", ":")))
