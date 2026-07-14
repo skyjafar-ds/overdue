@@ -865,7 +865,7 @@ function renderClock() {
     out += d
       ? `<line class="spoke" data-h="${h}" x1="${x0.toFixed(1)}" y1="${y0.toFixed(1)}" x2="${x1.toFixed(1)}" y2="${y1.toFixed(1)}"
            stroke="${errColor(d.median_err)}" stroke-width="9" stroke-linecap="round"><title>${fmtHour(h)} · median ${d.median_err}m</title></line>`
-      : `<line class="spoke-none" x1="${x0.toFixed(1)}" y1="${y0.toFixed(1)}" x2="${x1.toFixed(1)}" y2="${y1.toFixed(1)}" stroke-width="2"/>`;
+      : `<circle class="spoke-none" cx="${x0.toFixed(1)}" cy="${y0.toFixed(1)}" r="1.6"><title>${fmtHour(h)} · no graded record yet — no service, or not yet observed</title></circle>`;
     if (h % 6 === 0)
       out += `<text x="${(cx + Math.cos(ang) * (r1 + 12)).toFixed(1)}" y="${(cy + Math.sin(ang) * (r1 + 12) + 3).toFixed(1)}" text-anchor="middle">${fmtHour(h)}</text>`;
   }

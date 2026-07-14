@@ -75,6 +75,9 @@ def grade(resolutions: list[dict]) -> dict:
         block["routes"] = {
             route: _block(w) for route, w in sorted(by_route.items()) if any(w.values())
         }
+        # Hour cells need a real sample: service-boundary artifacts (e.g.
+        # overnight first-trip predictions being reassigned) show up as a
+        # handful of absurd resolutions in hours with no actual service.
         block["by_hour_utc"] = [
             {
                 "hour": hr,
@@ -83,7 +86,7 @@ def grade(resolutions: list[dict]) -> dict:
                 "n": len(errs),
             }
             for hr, errs in sorted(by_hour.items())
-            if len(errs) >= 5
+            if len(errs) >= 50
         ]
         agencies[agency] = block
     return {"generated": int(time.time()), "max_unc_s": MAX_UNC_S, "agencies": agencies}

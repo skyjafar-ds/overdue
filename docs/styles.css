@@ -236,7 +236,7 @@ h2 { font-family: var(--serif); font-weight: 500; font-size: clamp(26px, 3.4vw, 
 #clock .tickring { stroke: var(--hairline); }
 #clock .spoke { cursor: pointer; transition: opacity .2s ease; }
 #clock .spoke.dim { opacity: .25; }
-#clock .spoke-none { stroke: var(--hairline); stroke-dasharray: 2 4; }
+#clock .spoke-none { fill: var(--hairline); }
 #clock text { font-family: var(--mono); font-size: 10px; fill: var(--faded); }
 #clock .hand { stroke: var(--ink); stroke-width: 1.6; }
 #clock .hand-hub { fill: var(--brick); }
