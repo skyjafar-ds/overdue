@@ -1,1 +1,1 @@
-{"built":1783991560,"n_resolutions_window":2042,"record_begins":"2026-07-13","today":{"n_promises":34,"worst_miss":0.5,"kept_share":1.0},"last_burst":null}
+{"built":1783995709,"n_resolutions_window":3677,"record_begins":"2026-07-13","today":{"n_promises":4796,"worst_miss":9.9,"kept_share":0.74},"last_burst":1783995709,"burst_stats":{"mbta":{"snapshots":30,"promises":44201,"resolved":1203,"errors":0},"bart":{"snapshots":30,"promises":17240,"resolved":432,"errors":0}},"engine_counters":{"resolved":3017,"rejected":5210,"stale":0},"pending_pairs":2026,"agencies":["mbta","bart"]}
