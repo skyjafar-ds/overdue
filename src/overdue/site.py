@@ -75,6 +75,9 @@ def _promise_cards(trusted: list[dict], n: int = 48) -> list[dict]:
         h = max(int(k) for k in r["waits"])  # the boldest promise made
         wait = float(r["waits"][str(h)])
         issued = int(r["truth"] - wait * 60)
+        err = wait - h
+        # Early is its own kind of break: the rider wasn't on the platform yet.
+        verdict = "kept" if abs(err) <= 1.0 else ("early" if err < 0 else "late")
         cards.append(
             {
                 "agency": r["agency"],
@@ -84,8 +87,9 @@ def _promise_cards(trusted: list[dict], n: int = 48) -> list[dict]:
                 "promised_min": h,
                 "predicted": issued + h * 60,
                 "actual": r["truth"],
-                "err_min": round(wait - h, 1),
-                "kept": abs(wait - h) <= 1.0,
+                "err_min": round(err, 1),
+                "kept": abs(err) <= 1.0,
+                "verdict": verdict,
             }
         )
         if len(cards) >= n:

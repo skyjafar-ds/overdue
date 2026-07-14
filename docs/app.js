@@ -813,12 +813,104 @@ function calibrationFig(horizons, maxH, maxW) {
   </svg>`;
 }
 
+/* Smooth green -> amber -> brick, shared by the almanac and the clock. */
+const GOOD_C = [62, 92, 75], MID_C = [201, 185, 154], BAD_C = [169, 80, 61];
+function rampColor(t) {
+  t = Math.max(0, Math.min(1, t));
+  const [a, b, u] = t < 0.5 ? [GOOD_C, MID_C, t * 2] : [MID_C, BAD_C, (t - 0.5) * 2];
+  return `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * u)).join(",")})`;
+}
+const keptColor = (share) => rampColor((0.85 - share) / 0.4); // 85%+ green · 45%- brick
+const errColor = (err) => rampColor((err - 0.35) / 1.4);      // 0.35m green · 1.75m+ brick
+
+/* ================= THE CLOCK ================= */
+let clockAgency = "mbta";
+const fmtHour = (h) => `${h % 12 || 12}${h < 12 ? "am" : "pm"}`;
+const CLOCK_TZ = { mbta: ["America/New_York", "Boston time"], bart: ["America/Los_Angeles", "Pacific time"] };
+
+function clockHours() {
+  const [tz] = CLOCK_TZ[clockAgency] || ["UTC", "UTC"];
+  const by = {};
+  for (const h of state.summary?.agencies?.[clockAgency]?.by_hour_utc || []) {
+    const local = parseInt(
+      new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: false, timeZone: tz })
+        .format(new Date(Date.UTC(2026, 6, 15, h.hour))), 10) % 24;
+    by[local] = h;
+  }
+  return by;
+}
+
+function renderClock() {
+  const svg = $("#clock");
+  if (!svg || !state.summary) return;
+  const agencies = Object.keys(state.summary.agencies || {})
+    .filter((a) => (state.summary.agencies[a].by_hour_utc || []).length >= 3);
+  if (!agencies.length) return;
+  if (!agencies.includes(clockAgency)) clockAgency = agencies[0];
+  const names = { mbta: "MBTA", bart: "BART", caltrain: "Caltrain" };
+  $("#clock-tabs").innerHTML = agencies
+    .map((a) => `<button role="tab" aria-selected="${a === clockAgency}" data-agency="${a}">${names[a] || a}</button>`)
+    .join("");
+  const by = clockHours();
+  const cx = 220, cy = 220, r0 = 64, r1 = 192;
+  let out = `<circle class="face" cx="${cx}" cy="${cy}" r="${r1 + 22}"/>` +
+    `<circle class="tickring" cx="${cx}" cy="${cy}" r="${r0 - 10}" fill="none"/>`;
+  for (let h = 0; h < 24; h++) {
+    const ang = (h / 24) * Math.PI * 2 - Math.PI / 2;
+    const d = by[h];
+    const frac = d ? Math.min(1, d.median_err / 2.0) : 0;
+    const rr = r0 + (r1 - r0) * (d ? 0.18 + 0.82 * frac : 0.08);
+    const x0 = cx + Math.cos(ang) * r0, y0 = cy + Math.sin(ang) * r0;
+    const x1 = cx + Math.cos(ang) * rr, y1 = cy + Math.sin(ang) * rr;
+    out += d
+      ? `<line class="spoke" data-h="${h}" x1="${x0.toFixed(1)}" y1="${y0.toFixed(1)}" x2="${x1.toFixed(1)}" y2="${y1.toFixed(1)}"
+           stroke="${errColor(d.median_err)}" stroke-width="9" stroke-linecap="round"><title>${fmtHour(h)} · median ${d.median_err}m</title></line>`
+      : `<line class="spoke-none" x1="${x0.toFixed(1)}" y1="${y0.toFixed(1)}" x2="${x1.toFixed(1)}" y2="${y1.toFixed(1)}" stroke-width="2"/>`;
+    if (h % 6 === 0)
+      out += `<text x="${(cx + Math.cos(ang) * (r1 + 12)).toFixed(1)}" y="${(cy + Math.sin(ang) * (r1 + 12) + 3).toFixed(1)}" text-anchor="middle">${fmtHour(h)}</text>`;
+  }
+  const [tz] = CLOCK_TZ[clockAgency] || ["UTC"];
+  const parts = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "numeric", hour12: false, timeZone: tz })
+    .formatToParts(new Date());
+  const hh = +parts.find((p) => p.type === "hour").value % 24;
+  const mm = +parts.find((p) => p.type === "minute").value;
+  const hang = ((hh + mm / 60) / 24) * Math.PI * 2 - Math.PI / 2;
+  out += `<line class="hand" x1="${cx}" y1="${cy}" x2="${(cx + Math.cos(hang) * (r1 - 10)).toFixed(1)}" y2="${(cy + Math.sin(hang) * (r1 - 10)).toFixed(1)}"/>` +
+    `<circle class="hand-hub" cx="${cx}" cy="${cy}" r="4"/>`;
+  svg.innerHTML = out;
+}
+
+document.addEventListener("click", (e) => {
+  const tab = e.target.closest("#clock-tabs button");
+  if (!tab) return;
+  clockAgency = tab.dataset.agency;
+  renderClock();
+  $("#clock-readout").innerHTML = `<p class="deck">Rest on a spoke to read that hour.</p>`;
+});
+$("#clock").addEventListener("mouseover", (e) => {
+  const spoke = e.target.closest(".spoke");
+  if (!spoke) return;
+  $$("#clock .spoke").forEach((s) => s.classList.toggle("dim", s !== spoke));
+  const h = +spoke.dataset.h;
+  const d = clockHours()[h];
+  if (!d) return;
+  const [, tzName] = CLOCK_TZ[clockAgency] || [0, "local"];
+  $("#clock-readout").innerHTML = `
+    <div class="hour">${fmtHour(h)}–${fmtHour((h + 1) % 24)}, ${tzName}</div>
+    <div class="kv"><span>median error</span><b>${d.median_err} min</b></div>
+    <div class="kv"><span>bias</span><b>${d.bias > 0 ? "+" : ""}${d.bias} min ${d.bias > 0.2 ? "· you wait" : d.bias < -0.2 ? "· it comes early" : "· honest"}</b></div>
+    <div class="kv"><span>promises graded</span><b>${d.n.toLocaleString()}</b></div>`;
+});
+$("#clock").addEventListener("mouseleave", () => $$("#clock .spoke").forEach((s) => s.classList.remove("dim")));
+setInterval(renderClock, 60_000); // the hand keeps time
+
 async function renderRecord() {
   const body = $("#record-body");
   const names = { mbta: "The MBTA", bart: "BART", caltrain: "Caltrain" };
   try {
     const [summary, fresh] = await Promise.all([dget("data/summary.json"), dget("data/freshness.json")]);
     state.summary = summary;
+    renderClock();
     // One shared axis domain across every agency's figure.
     let maxH = 10, maxW = 10;
     for (const b of Object.values(summary.agencies || {}))
@@ -863,9 +955,11 @@ async function renderLedger() {
     $("#ledger").innerHTML = cards.slice(0, 12).map((c) => {
       const where = state.stopName[c.stop] || (c.agency === "bart" ? `BART · ${c.stop}` : `stop ${c.stop}`);
       const line = c.agency === "mbta" ? (state.routes[c.route]?.name || c.route) : "BART";
+      const verdict = c.verdict || (c.kept ? "kept" : c.err_min < 0 ? "early" : "late");
+      const label = { kept: "kept", early: "came early", late: "broken" }[verdict];
       return `<div class="promise reveal in">
         <div class="head"><span class="where">${esc(where)}</span>
-          <span class="verdict ${c.kept ? "kept" : "broken"}">${c.kept ? "kept" : "broken"}</span></div>
+          <span class="verdict ${verdict}">${label}</span></div>
         <div class="kv"><span>line</span><b>${esc(line)}</b></div>
         <div class="kv"><span>issued</span><b>${fmtClock(c.issued)}</b></div>
         <div class="kv"><span>swore</span><b>${c.promised_min} min → ${fmtClock(c.predicted)}</b></div>
@@ -887,8 +981,9 @@ async function renderAlmanac() {
     const names = { mbta: "MBTA", bart: "BART", caltrain: "Caltrain" };
     $("#calendars").innerHTML = Object.entries(byAgency).map(([agency, rows]) => {
       const cells = rows.map((d) => {
-        const q = d.within_1min >= 0.75 ? "a" : d.within_1min >= 0.6 ? "b" : d.within_1min >= 0.45 ? "c" : "d";
-        return `<button class="day-cell" data-q="${q}" data-agency="${agency}" data-day="${d.day}"
+        const c = keptColor(d.within_1min);
+        return `<button class="day-cell" style="background:${c};border-color:${c}"
+          data-agency="${agency}" data-day="${d.day}"
           data-tip="${d.day} · ${Math.round(d.within_1min * 100)}% kept" aria-label="Open ${d.day}"></button>`;
       }).join("");
       return `<h3 class="serif" style="margin:26px 0 4px">${names[agency] || agency}</h3><div class="calendar">${cells}</div>`;

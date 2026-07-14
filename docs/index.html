@@ -104,12 +104,29 @@
     <h2>Promises, as objects</h2>
     <p class="deck">Each card is one real promise from the record: when it was issued, what it
     swore, and what actually happened. Reconstructed exactly from the ledger — these are not
-    examples, they are entries.</p>
+    examples, they are entries. A promise is kept within a minute either way; <em>early is a
+    break too</em> — if the train beat its own word, you weren't on the platform yet.</p>
     <div class="ledger" id="ledger"></div>
   </section>
 
+  <section id="clock-s">
+    <p class="kicker">Plate V — The Clock</p>
+    <h2>When is the network honest?</h2>
+    <p class="deck">Twenty-four spokes, one per hour of the day. Long, brick-colored spokes are
+    hours when promises drift; short green ones are hours the word is good. The thin hand
+    sweeps at the current hour — rest anywhere on the dial to read that hour's record.</p>
+    <div class="clock-wrap">
+      <svg id="clock" viewBox="0 0 440 440" role="img" aria-label="Promise error by hour of day"></svg>
+      <div class="clock-side">
+        <div class="clock-tabs" id="clock-tabs" role="tablist"></div>
+        <div class="readout" id="clock-readout"><p class="deck">The dial fills as the record
+        accrues hours — rest on a spoke.</p></div>
+      </div>
+    </div>
+  </section>
+
   <section id="almanac">
-    <p class="kicker">Plate V — The Almanac</p>
+    <p class="kicker">Plate VI — The Almanac</p>
     <h2>The days, kept</h2>
     <p class="deck">Each square is one day of each agency’s record — greener days kept their
     promises, brick days broke them. Click any day to open its diary entry. The calendar
