@@ -7,10 +7,18 @@
 Live dashboard: **https://skyjafar-ds.github.io/overdue/**
 
 Every minute, transit agencies publish thousands of predictions — *"bus
-arriving in 4 minutes."* Nobody checks whether they come true. overdue is
-an always-on observatory that logs the promises, infers what actually
-happened, and publishes the report card: to our knowledge, the first
-public longitudinal accuracy record for transit arrival predictions.
+arriving in 4 minutes."* The MBTA grades its own predictions
+([their dashboard](https://www.mbta.com/performance-metrics/arrival-prediction-accuracy)),
+with bins the agency chose; most agencies publish nothing at all. overdue
+is the **independent audit**: an always-on observatory, unaffiliated with
+any agency, that logs the promises, infers what actually happened with an
+open tested method, and publishes full calibration curves — not just
+binned accuracy — in an append-only public ledger anyone can recompute,
+under one ruler across multiple agencies. (An earlier version of this
+README claimed to be the first public accuracy record; the MBTA's
+self-reported dashboard predates us, and this project keeps its own
+promises too. Independence, finer methodology, and cross-agency
+comparability are the actual contributions.)
 
 Currently observing the **MBTA** (Boston subway + light rail) and **BART**
 (SF Bay Area), with Caltrain support behind a free 511.org key.
