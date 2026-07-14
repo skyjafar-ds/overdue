@@ -10,6 +10,7 @@
 </head>
 <body>
 
+<div class="progress" id="progress" aria-hidden="true"></div>
 <header class="masthead" id="masthead">
   <div class="masthead-inner">
     <a class="title" href="#top">overdue</a>
@@ -59,9 +60,10 @@
           <button id="zoom-out" aria-label="Zoom out">−</button>
           <button id="zoom-reset" aria-label="Reset view">⌂</button>
         </div>
-        <span class="tool-hint">scroll to zoom · drag to pan · click a train or station</span>
+        <div class="legend" id="legend" aria-label="Show or hide lines"></div>
         <div class="heartbeat" id="heartbeat" aria-label="Network heartbeat"></div>
       </div>
+      <p class="tool-hint">scroll to zoom · drag to pan · click a train or station · click a line’s name to isolate it</p>
       <svg id="map" viewBox="0 0 1000 760" role="img" aria-label="Live map of MBTA rapid transit">
         <text x="500" y="380" text-anchor="middle">surveying the network…</text>
       </svg>

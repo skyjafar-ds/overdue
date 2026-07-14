@@ -62,12 +62,53 @@ function camZoom(fx, fy, factor) {
   addEventListener("scroll", () => $("#masthead").classList.toggle("scrolled", scrollY > 8), { passive: true });
 })();
 
-/* ---------------- reveals ---------------- */
+/* ---------------- reveals + ambient craft ---------------- */
 const io = new IntersectionObserver(
   (es) => es.forEach((e) => e.isIntersecting && e.target.classList.add("in")),
   { threshold: 0.1 }
 );
 $$(".reveal").forEach((el) => io.observe(el));
+
+// reading progress hairline
+addEventListener("scroll", () => {
+  const max = document.documentElement.scrollHeight - innerHeight;
+  $("#progress").style.width = (max > 0 ? (scrollY / max) * 100 : 0) + "%";
+}, { passive: true });
+
+// figures count up the first time they land
+function setFigure(el, value, suffix = "") {
+  if (reduced || value < 10) {
+    el.innerHTML = value.toLocaleString() + suffix;
+    return;
+  }
+  const t0 = performance.now(), dur = 900;
+  (function tick(now) {
+    const u = Math.min(1, (now - t0) / dur);
+    const eased = 1 - (1 - u) ** 3;
+    el.innerHTML = Math.round(value * eased).toLocaleString() + suffix;
+    if (u < 1) requestAnimationFrame(tick);
+  })(performance.now());
+}
+
+// the map plate's shadow leans away from the cursor, like a sheet under a lamp
+(function plateShadow() {
+  if (reduced) return;
+  const plate = $(".plate");
+  if (!plate) return;
+  let raf = 0;
+  plate.addEventListener("mousemove", (e) => {
+    if (raf) return;
+    raf = requestAnimationFrame(() => {
+      raf = 0;
+      const r = plate.getBoundingClientRect();
+      const dx = ((e.clientX - r.left) / r.width - 0.5) * -10;
+      const dy = ((e.clientY - r.top) / r.height - 0.5) * -8;
+      plate.style.boxShadow =
+        `${dx.toFixed(1)}px ${(dy + 6).toFixed(1)}px 30px rgba(60, 50, 30, .12), 0 1px 2px rgba(60, 50, 30, .08)`;
+    });
+  });
+  plate.addEventListener("mouseleave", () => { plate.style.boxShadow = ""; });
+})();
 
 async function jget(url) {
   const r = await fetch(url);
@@ -179,7 +220,7 @@ async function buildMap() {
     const stopsOnPath = p.seq.map((pt, i) => ({ name: pt.name, s: path.cum[i] }));
     state.paths.push({ route: p.route, dir: p.dir, path, stops: stopsOnPath });
     const d = xy.map((q, i) => `${i ? "L" : "M"}${q[0].toFixed(1)},${q[1].toFixed(1)}`).join(" ");
-    casings += `<path class="rail-casing" d="${d}" stroke-width="7"/>`;
+    casings += `<path class="rail-casing" data-route="${p.route}" d="${d}" stroke-width="7"/>`;
     rails += `<path class="rail" data-route="${p.route}" d="${d}" stroke="${state.routes[p.route].color}" stroke-width="3.4"><title>${state.routes[p.route].name} Line</title></path>`;
   }
   let stns = "", hits = "", lbls = "";
@@ -188,15 +229,81 @@ async function buildMap() {
     const X = x.toFixed(1), Y = y.toFixed(1);
     stns += `<circle class="stn" data-name="${esc(s.name)}" cx="${X}" cy="${Y}" r="${s.routes.size > 1 ? 5 : 3.2}"/>`;
     hits += `<circle class="hit" data-kind="stn" data-name="${esc(s.name)}" cx="${X}" cy="${Y}" r="11"/>`;
-    if (s.routes.size > 1) lbls += `<text class="lbl" x="${(x + 8).toFixed(1)}" y="${(y - 7).toFixed(1)}">${esc(s.name)}</text>`;
+    if (s.routes.size > 1) lbls += `<text class="lbl" data-name="${esc(s.name)}" x="${(x + 8).toFixed(1)}" y="${(y - 7).toFixed(1)}">${esc(s.name)}</text>`;
   }
   svg.innerHTML =
     `<g id="g-rails">${casings}${rails}</g><g id="g-stns">${stns}</g>` +
     `<g id="g-lbls">${lbls}</g><g id="g-hits">${hits}</g><g id="g-trains"></g>`;
+  if (!reduced) {
+    for (const rail of $$("#map .rail")) {
+      const len = rail.getTotalLength();
+      rail.style.strokeDasharray = len;
+      rail.style.strokeDashoffset = len;
+      rail.classList.add("draw");
+    }
+    setTimeout(() => {
+      for (const rail of $$("#map .rail")) {
+        rail.classList.remove("draw");
+        rail.style.strokeDasharray = rail.style.strokeDashoffset = "";
+      }
+    }, 1600);
+  }
   wireMapInput(svg);
+  renderLegend();
   await refreshVehicles();
   setInterval(refreshVehicles, REFRESH_S * 1000);
   requestAnimationFrame(animate);
+}
+
+/* ---------------- line isolation ---------------- */
+const LINE_GROUPS = [
+  { key: "Red", label: "Red", match: (r) => r === "Red" },
+  { key: "Orange", label: "Orange", match: (r) => r === "Orange" },
+  { key: "Blue", label: "Blue", match: (r) => r === "Blue" },
+  { key: "Green", label: "Green", match: (r) => r.startsWith("Green") },
+  { key: "Mattapan", label: "Mattapan", match: (r) => r === "Mattapan" },
+];
+const visibleGroups = new Set(LINE_GROUPS.map((g) => g.key));
+const groupOf = (route) => LINE_GROUPS.find((g) => g.match(route))?.key;
+const routeVisible = (route) => visibleGroups.has(groupOf(route));
+
+function renderLegend() {
+  $("#legend").innerHTML = LINE_GROUPS.map((g) => {
+    const color = state.routes[g.key === "Green" ? "Green-B" : g.key]?.color || "#888";
+    return `<button data-group="${g.key}" class="${visibleGroups.has(g.key) ? "" : "off"}"
+      style="--lc:${color}" aria-pressed="${visibleGroups.has(g.key)}"><i></i>${g.label}</button>`;
+  }).join("");
+}
+$("#legend").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-group]");
+  if (!btn) return;
+  const key = btn.dataset.group;
+  if (visibleGroups.has(key) && visibleGroups.size === 1) {
+    for (const g of LINE_GROUPS) visibleGroups.add(g.key); // solo -> restore all
+  } else if (visibleGroups.size === LINE_GROUPS.length) {
+    visibleGroups.clear(); visibleGroups.add(key); // first click isolates
+  } else if (visibleGroups.has(key)) {
+    visibleGroups.delete(key);
+    if (!visibleGroups.size) for (const g of LINE_GROUPS) visibleGroups.add(g.key);
+  } else visibleGroups.add(key);
+  renderLegend();
+  applyLineFilter();
+});
+
+function applyLineFilter() {
+  for (const el of $$("#map .rail, #map .rail-casing")) {
+    const route = el.dataset.route;
+    el.style.display = !route || routeVisible(route) ? "" : "none";
+  }
+  for (const t of state.trains.values())
+    t.el.style.display = routeVisible(t.el.dataset.route) ? "" : "none";
+  const stationVisible = (name) => {
+    const st = state.mbtaStops[name];
+    return st && [...st.routes].some(routeVisible);
+  };
+  for (const el of $$("#map .stn, #map .lbl, #map .hit[data-kind='stn']"))
+    el.style.display = stationVisible(el.dataset.name) ? "" : "none";
+  closePanel();
 }
 
 /* ---------------- input: camera + hover + selection ---------------- */
@@ -338,7 +445,8 @@ async function refreshVehicles() {
       `${MBTA}/vehicles?filter[route]=${RAIL_ROUTES.join(",")}` +
       `&fields[vehicle]=latitude,longitude,direction_id,current_status,updated_at&page[limit]=300`
     );
-    $("#t-trains").textContent = j.data.length;
+    if (!state.trains.size) setFigure($("#t-trains"), j.data.length);
+    else $("#t-trains").textContent = j.data.length;
     const seen = new Set();
     const now = performance.now();
     for (const v of j.data) {
@@ -364,6 +472,7 @@ async function refreshVehicles() {
         updated: v.attributes.updated_at,
         speed: Math.abs(t.sTarget - t.sFrom) * state.mpp / REFRESH_S,
       };
+      t.el.style.display = routeVisible(route) ? "" : "none";
     }
     for (const [vid, t] of state.trains)
       if (!seen.has(vid)) { t.el.remove(); state.trains.delete(vid); }
@@ -676,20 +785,28 @@ addEventListener("keydown", (e) => {
 
 /* ================= THE RECORD ================= */
 
-function calibrationFig(horizons) {
-  const W = 480, H = 240, L = 44, B = 206, T = 14, R = 462;
-  const maxH = Math.max(...horizons.map((d) => d.h));
-  const maxW = Math.max(...horizons.map((d) => d.mean_wait), maxH) * 1.06;
+function calibrationFig(horizons, maxH, maxW) {
+  // Shared axis domain across agencies so the figures compare honestly.
+  const W = 480, H = 250, L = 40, B = 212, T = 16, R = 466;
   const x = (v) => L + ((R - L) * v) / maxH, y = (v) => B - ((B - T) * v) / maxW;
   const pts = horizons.map((d) => `${x(d.h).toFixed(1)},${y(d.mean_wait).toFixed(1)}`).join(" ");
+  const step = maxH > 12 ? 10 : 5;
+  let grid = "";
+  for (let v = step; v <= maxH; v += step)
+    grid += `<line class="axis" x1="${x(v)}" y1="${B}" x2="${x(v)}" y2="${B + 4}"/>
+             <text x="${x(v)}" y="${B + 16}" text-anchor="middle">${v}</text>`;
+  for (let v = step; v <= maxW; v += step)
+    grid += `<line class="axis" x1="${L}" y1="${y(v)}" x2="${R}" y2="${y(v)}" opacity=".45"/>
+             <text x="${L - 5}" y="${y(v) + 3}" text-anchor="end">${v}</text>`;
   return `<svg class="fig-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Promised versus actual wait">
+    ${grid}
     <line class="axis" x1="${L}" y1="${B}" x2="${R}" y2="${B}"/><line class="axis" x1="${L}" y1="${T}" x2="${L}" y2="${B}"/>
-    <polyline class="ideal" points="${x(0)},${y(0)} ${x(maxH)},${y(maxH)}"/>
+    <polyline class="ideal" points="${x(0)},${y(0)} ${x(Math.min(maxH, maxW))},${y(Math.min(maxH, maxW))}"/>
     <polyline class="curve" points="${pts}"/>
     ${horizons.map((d) => `<circle class="dot" r="3" cx="${x(d.h).toFixed(1)}" cy="${y(d.mean_wait).toFixed(1)}"><title>said ${d.h} min → waited ${d.mean_wait} min (n=${d.n})</title></circle>`).join("")}
-    <text x="${L + 4}" y="${T + 2}">actual wait, min</text>
-    <text x="${R}" y="${B + 20}" text-anchor="end">promised, min</text>
-    <text x="${x(maxH) - 6}" y="${y(maxH) + 12}" text-anchor="end">the diagonal is honesty</text>
+    <text x="${L + 6}" y="${T + 2}">actual wait, min</text>
+    <text x="${R}" y="${B + 16}" text-anchor="end">promised, min</text>
+    <text x="${x(Math.min(maxH, maxW)) - 8}" y="${y(Math.min(maxH, maxW)) + 14}" text-anchor="end">the diagonal is honesty</text>
   </svg>`;
 }
 
@@ -699,6 +816,14 @@ async function renderRecord() {
   try {
     const [summary, fresh] = await Promise.all([jget("data/summary.json"), jget("data/freshness.json")]);
     state.summary = summary;
+    // One shared axis domain across every agency's figure.
+    let maxH = 10, maxW = 10;
+    for (const b of Object.values(summary.agencies || {}))
+      for (const d of b.horizons || []) {
+        maxH = Math.max(maxH, d.h);
+        maxW = Math.max(maxW, d.mean_wait);
+      }
+    maxW = Math.max(maxW * 1.08, maxH);
     const cards = [];
     for (const [id, b] of Object.entries(summary.agencies || {})) {
       if (!b.n_promises) continue;
@@ -711,7 +836,7 @@ async function renderRecord() {
           <div class="figure"><div class="n ${grade(Math.abs(b.bias), 0.5, 1.25)}">${b.bias > 0 ? "+" : ""}${b.bias.toFixed(2)}<small>m</small></div><div class="k">bias · + means you wait</div></div>
           <div class="figure"><div class="n">${(b.within_1min * 100).toFixed(0)}%</div><div class="k">within one minute</div></div>
         </div>
-        ${b.horizons?.length >= 3 ? calibrationFig(b.horizons) : `<p class="lede">The calibration curve is drawing itself — longer promises take longer to grade.</p>`}
+        ${b.horizons?.length >= 3 ? calibrationFig(b.horizons, maxH, maxW) : `<p class="lede">The calibration curve is drawing itself — longer promises take longer to grade.</p>`}
       </div>`);
     }
     body.innerHTML = cards.join("") || `<div class="story"><p class="lede">The record opens with the observatory's first committed run.</p></div>`;
@@ -719,7 +844,7 @@ async function renderRecord() {
     $("#record-foot").textContent =
       `Method: arrivals inferred from promise-stream convergence and disappearance; only arrivals with ≤120 s uncertainty are graded. ` +
       `Last observation ${when.toLocaleString()} · the ledger is append-only and public.`;
-    $("#t-graded").textContent = (fresh.n_resolutions_window || 0).toLocaleString();
+    setFigure($("#t-graded"), fresh.n_resolutions_window || 0);
     const mbta = summary.agencies?.mbta;
     if (mbta?.median_abs_err != null) $("#t-err").innerHTML = `${mbta.median_abs_err.toFixed(2)}<small> min</small>`;
     if (fresh.today?.n_promises) $("#t-promises").innerHTML = `${fresh.today.n_promises.toLocaleString()}<small> graded</small>`;
