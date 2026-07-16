@@ -67,7 +67,18 @@ jobs:
             echo "nothing new to commit"
           else
             git commit -m "observe: $(date -u +'%Y-%m-%d %H:%M') UTC"
-            git pull --rebase origin main
+            # Manual pushes can land mid-run; on rebase conflict the
+            # observatory's fresh data wins for data files (nothing else
+            # can conflict — this job only ever touches data).
+            for attempt in 1 2 3; do
+              if git pull --rebase origin main; then
+                break
+              fi
+              for f in $(git diff --name-only --diff-filter=U); do
+                git checkout --theirs "$f" && git add "$f"
+              done
+              GIT_EDITOR=true git rebase --continue || git rebase --abort
+            done
             git push
           fi
 

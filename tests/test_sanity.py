@@ -53,6 +53,24 @@ def test_site_build_is_validated_end_to_end(tmp_path):
     assert fresh["today"]["worst_miss"] <= MAX_EXCESS_MIN
 
 
+def test_promise_cards_survive_the_rounding_boundary(tmp_path):
+    """Regression: raw err 1.04 rounds to 1.0 — verdict must follow the
+    published (rounded) number, or the sanity contract bricks the build."""
+    store = Store(tmp_path / "data")
+    ts = int(time.time())
+    rows = [_res({"5": 6.04}) for _ in range(30)]   # err 1.04 -> kept at 1.0
+    rows += [_res({"5": 6.06}) for _ in range(5)]   # err 1.06 -> late at 1.1
+    rows += [_res({"5": 3.94}) for _ in range(5)]   # err -1.06 -> early at -1.1
+    store.append_graded("mbta", rows, ts)
+    build_site_data(store, tmp_path / "site", meta={})  # must not raise
+    import json
+    cards = json.loads((tmp_path / "site/data/promises.json").read_text())
+    verdicts = {(c["err_min"], c["verdict"]) for c in cards}
+    assert (1.0, "kept") in verdicts
+    assert (1.1, "late") in verdicts
+    assert (-1.1, "early") in verdicts
+
+
 def test_contract_rejects_impossible_payloads():
     ok_summary = {"agencies": {}}
     validate_site_data(ok_summary, [], {}, [], {})
