@@ -41,10 +41,10 @@ jobs:
           key: overdue-state-${{ github.run_id }}
           restore-keys: overdue-state-
 
-      - name: Observation burst (30 snapshots, 60 s apart)
+      - name: Observation burst (30 snapshots, 60 s apart; grades only)
         env:
           OVERDUE_511_KEY: ${{ secrets.OVERDUE_511_KEY }}
-        run: overdue observe --snapshots 30 --interval 60
+        run: overdue observe --snapshots 30 --interval 60 --no-site
 
       - name: Prune raw snapshots older than 2 days
         run: overdue prune
@@ -58,22 +58,41 @@ jobs:
             data/state.json
           key: overdue-state-${{ github.run_id }}
 
-      - name: Commit the graded record + site data
+      # Observed data is committed BEFORE publication is attempted: a
+      # sanity-contract failure may block the site update, but it can
+      # never again cost a burst's graded record.
+      - name: Commit the graded record (unconditional)
+        if: always()
         run: |
           git config user.name "overdue-observatory"
           git config user.email "actions@github.com"
-          git add data/graded docs/data
+          git add data/graded docs/data/meta.json
           if git diff --cached --quiet; then
             echo "nothing new to commit"
           else
-            git commit -m "observe: $(date -u +'%Y-%m-%d %H:%M') UTC"
-            # Manual pushes can land mid-run; on rebase conflict the
-            # observatory's fresh data wins for data files (nothing else
-            # can conflict — this job only ever touches data).
+            git commit -m "observe: $(date -u +'%Y-%m-%d %H:%M') UTC (grades)"
             for attempt in 1 2 3; do
-              if git pull --rebase origin main; then
-                break
-              fi
+              if git pull --rebase origin main; then break; fi
+              for f in $(git diff --name-only --diff-filter=U); do
+                git checkout --theirs "$f" && git add "$f"
+              done
+              GIT_EDITOR=true git rebase --continue || git rebase --abort
+            done
+            git push
+          fi
+
+      - name: Build site data (sanity contract gates publication)
+        run: overdue build-site
+
+      - name: Commit the published site data
+        run: |
+          git add docs/data
+          if git diff --cached --quiet; then
+            echo "site data unchanged"
+          else
+            git commit -m "observe: $(date -u +'%Y-%m-%d %H:%M') UTC (site)"
+            for attempt in 1 2 3; do
+              if git pull --rebase origin main; then break; fi
               for f in $(git diff --name-only --diff-filter=U); do
                 git checkout --theirs "$f" && git add "$f"
               done

@@ -16,7 +16,9 @@ from .store import Store
 from .truth import TruthEngine
 
 
-def observe(store: Store, site_dir: Path, snapshots: int, interval: int) -> dict:
+def observe(
+    store: Store, site_dir: Path, snapshots: int, interval: int, build_site: bool = True
+) -> dict:
     """One poll burst: N snapshots, `interval` seconds apart, per agency.
 
     Promises stream into the truth engine; resolved arrivals append to the
@@ -62,7 +64,10 @@ def observe(store: Store, site_dir: Path, snapshots: int, interval: int) -> dict
         "pending_pairs": len(engine.pairs),
         "agencies": [a.id for a in agencies],
     }
-    build_site_data(store, site_dir, meta)
+    (Path(site_dir) / "data").mkdir(parents=True, exist_ok=True)
+    (Path(site_dir) / "data" / "meta.json").write_text(json.dumps(meta))
+    if build_site:
+        build_site_data(store, site_dir, meta)
     print(json.dumps(meta, indent=1))
     return meta
 
@@ -76,6 +81,12 @@ def main(argv: list[str] | None = None) -> None:
     ob = sub.add_parser("observe", help="poll burst + resolve + grade + rebuild site data")
     ob.add_argument("--snapshots", type=int, default=10)
     ob.add_argument("--interval", type=int, default=60)
+    ob.add_argument(
+        "--no-site",
+        action="store_true",
+        help="skip the site rebuild (grades still append; publication separated "
+        "so a sanity failure can never cost observed data)",
+    )
 
     sub.add_parser("build-site", help="rebuild site data from the graded store")
     sub.add_parser("prune", help="delete raw snapshots older than 2 days")
@@ -83,9 +94,12 @@ def main(argv: list[str] | None = None) -> None:
     args = p.parse_args(argv)
     store = Store(Path(args.data))
     if args.cmd == "observe":
-        observe(store, Path(args.site), args.snapshots, args.interval)
+        observe(store, Path(args.site), args.snapshots, args.interval,
+                build_site=not args.no_site)
     elif args.cmd == "build-site":
-        build_site_data(store, Path(args.site), {"last_burst": None})
+        meta_path = Path(args.site) / "data" / "meta.json"
+        meta = json.loads(meta_path.read_text()) if meta_path.exists() else {"last_burst": None}
+        build_site_data(store, Path(args.site), meta)
         print("site data rebuilt")
     elif args.cmd == "prune":
         removed = store.prune_raw()
