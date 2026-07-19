@@ -939,10 +939,13 @@ async function renderRecord() {
     $("#record-foot").textContent =
       `Method: arrivals inferred from promise-stream convergence and disappearance; only arrivals with ≤120 s uncertainty are graded. ` +
       `Last observation ${when.toLocaleString()} · the ledger is append-only and public.`;
-    setFigure($("#t-graded"), fresh.n_resolutions_window || 0);
+    setFigure($("#t-graded"), fresh.n_arrivals_window ?? fresh.n_resolutions_window ?? 0);
+    if (fresh.n_promises_window)
+      $("#t-graded-note").textContent =
+        `30-day record · ${fresh.n_promises_window.toLocaleString()} promises`;
     const mbta = summary.agencies?.mbta;
     if (mbta?.median_abs_err != null) $("#t-err").innerHTML = `${mbta.median_abs_err.toFixed(2)}<small> min</small>`;
-    if (fresh.today?.n_promises) $("#t-promises").innerHTML = `${fresh.today.n_promises.toLocaleString()}<small> graded</small>`;
+    if (fresh.today?.n_promises) $("#t-promises").innerHTML = fresh.today.n_promises.toLocaleString();
   } catch {
     body.innerHTML = `<div class="story"><p class="lede">The record hasn't been published yet.</p></div>`;
   }

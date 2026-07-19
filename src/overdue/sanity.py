@@ -64,6 +64,14 @@ def validate_site_data(
         for route, rb in (b.get("routes") or {}).items():
             _check_err(rb.get("bias"), f"{agency}/{route}.bias")
             _check_share(rb.get("within_1min"), f"{agency}/{route}.within_1min")
+        # Units cross-check: the promise count IS the sum of its horizon
+        # cells; if these ever diverge, two surfaces are speaking
+        # different languages again.
+        if b.get("horizons"):
+            _check(
+                b.get("n_promises") == sum(h["n"] for h in b["horizons"]),
+                f"{agency}: n_promises != sum of horizon cells",
+            )
 
     for d in days:
         _check(d["n"] >= MIN_N["day"], f"day {d['day']} below floor")

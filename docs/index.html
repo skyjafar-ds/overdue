@@ -40,8 +40,8 @@
 
     <div class="today reveal" id="today">
       <div class="cell"><div class="k">Trains running</div><div class="v" id="t-trains">—</div><div class="note">MBTA rapid transit</div></div>
-      <div class="cell"><div class="k">Promises today</div><div class="v" id="t-promises">—</div><div class="note">logged by the observatory</div></div>
-      <div class="cell"><div class="k">Arrivals graded</div><div class="v" id="t-graded">—</div><div class="note">30-day record</div></div>
+      <div class="cell"><div class="k">Promises graded today</div><div class="v" id="t-promises">—</div><div class="note">agency-local day</div></div>
+      <div class="cell"><div class="k">Arrivals graded</div><div class="v" id="t-graded">—</div><div class="note" id="t-graded-note">30-day record</div></div>
       <div class="cell"><div class="k">Median error</div><div class="v" id="t-err">—</div><div class="note">promise vs. reality</div></div>
       <div class="cell"><div class="k">Service notes</div><div class="v" id="t-alerts">—</div><div class="note" id="t-alerts-note">from MBTA alerts</div></div>
     </div>
@@ -92,9 +92,12 @@
   <section id="record">
     <p class="kicker">Plate III — The Record</p>
     <h2>When they say ten minutes, <em>how long do you wait?</em></h2>
-    <p class="deck">The observatory’s reason for existing. Promises are sampled at standard
-    horizons, arrivals are inferred with documented rules and published uncertainty, and the
-    ledger below cannot be edited by anyone — including the agencies it grades.</p>
+    <p class="deck">The observatory’s reason for existing. Two units, used precisely:
+    an <em>arrival</em> is one inferred vehicle-stop event; each arrival grades up to nine
+    <em>promises</em> — one per horizon it was tracked through — which is why the promise
+    count runs several times the arrival count. Arrivals are inferred with documented rules
+    and published uncertainty, and the ledger cannot be edited by anyone — including the
+    agencies it grades.</p>
     <div class="stories" id="record-body"></div>
     <p class="footnote" id="record-foot"></p>
   </section>
@@ -130,9 +133,10 @@
   <section id="almanac">
     <p class="kicker">Plate VI — The Almanac</p>
     <h2>The days, kept</h2>
-    <p class="deck">Each square is one day of each agency’s record — greener days kept their
-    promises, brick days broke them. Click any day to open its diary entry. The calendar
-    fills for as long as the observatory runs.</p>
+    <p class="deck">Each square is one day of each agency’s record — a <em>Boston</em> day for
+    the MBTA, a <em>Pacific</em> day for BART — greener days kept their promises, brick days
+    broke them. Click any day to open its diary entry. The calendar fills for as long as the
+    observatory runs.</p>
     <div id="calendars"></div>
     <div class="day-diary" id="day-diary" aria-live="polite"></div>
     <div class="marginalia" id="marginalia"></div>

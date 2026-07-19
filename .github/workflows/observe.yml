@@ -9,7 +9,8 @@ name: Observe
 
 on:
   schedule:
-    - cron: "*/20 * * * *"
+    - cron: "13 * * * *"  # hourly backstop only — the chain does the work;
+                          # a denser cron just queues runs the chain cancels
   workflow_dispatch:
 
 concurrency:

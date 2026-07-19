@@ -58,6 +58,13 @@ CALTRAIN = Agency(
 
 AGENCIES: dict[str, Agency] = {a.id: a for a in (MBTA, BART, CALTRAIN)}
 
+# A "day" of transit belongs to the city it serves, not to Greenwich.
+AGENCY_TZ = {
+    "mbta": "America/New_York",
+    "bart": "America/Los_Angeles",
+    "caltrain": "America/Los_Angeles",
+}
+
 
 def active_agencies() -> list[Agency]:
     return [a for a in AGENCIES.values() if a.enabled()]

@@ -11,13 +11,23 @@ from __future__ import annotations
 import json
 import time
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import numpy as np
 
+from .agencies import AGENCY_TZ
 from .grade import MAX_UNC_S, MIN_N, clean_samples, grade, sample_ok
 from .sanity import validate_site_data
-from .store import Store, day_str
+from .store import Store
+
+
+def local_day(ts: int, agency: str) -> str:
+    """The agency-local calendar date of a timestamp (riders live in
+    Boston or the Bay, not UTC — 'today' must not reset at 8pm ET)."""
+    tz = ZoneInfo(AGENCY_TZ.get(agency, "UTC"))
+    return datetime.fromtimestamp(ts, tz).strftime("%Y-%m-%d")
 
 WINDOW_DAYS = 30
 MAX_STATIONS = 400
@@ -32,7 +42,7 @@ def _errs(rows: list[dict]) -> np.ndarray:
 def _days_json(trusted: list[dict]) -> list[dict]:
     by_day: dict[tuple[str, str], list[dict]] = defaultdict(list)
     for r in trusted:
-        by_day[(r["agency"], day_str(r["truth"]))].append(r)
+        by_day[(r["agency"], local_day(r["truth"], r["agency"]))].append(r)
     out = []
     for (agency, day), rows in sorted(by_day.items()):
         e = _errs(rows)
@@ -167,14 +177,27 @@ def build_site_data(store: Store, site_dir: Path, meta: dict | None = None) -> d
     trusted = [r for r in resolutions if r["unc"] <= MAX_UNC_S]
     summary = grade(resolutions)
     summary["window_days"] = WINDOW_DAYS
-    today = day_str()
-    today_errs = _errs([r for r in trusted if day_str(r["truth"]) == today])
+    now = int(time.time())
+    # "Today" is each agency's local day: an MBTA arrival at 9pm Boston
+    # time belongs to today, whatever Greenwich thinks.
+    today_rows = [
+        r for r in trusted
+        if local_day(r["truth"], r["agency"]) == local_day(now, r["agency"])
+    ]
+    today_errs = _errs(today_rows)
     enough_today = len(today_errs) >= MIN_N["today"]
     freshness = {
-        "built": int(time.time()),
-        "n_resolutions_window": len(resolutions),
-        "record_begins": min((day_str(r["truth"]) for r in resolutions), default=None),
+        "built": now,
+        # Two units, named precisely: arrivals (inferred vehicle-stop
+        # events, trusted) and promises (horizon samples graded from them).
+        "n_arrivals_window": len(trusted),
+        "n_promises_window": int(sum(len(clean_samples([r])[0]) for r in trusted)),
+        "n_resolutions_window": len(resolutions),  # incl. wide-uncertainty
+        "record_begins": min(
+            (local_day(r["truth"], r["agency"]) for r in resolutions), default=None
+        ),
         "today": {
+            "n_arrivals": len(today_rows),
             "n_promises": int(len(today_errs)),
             "worst_miss": round(float(today_errs.max()), 1) if enough_today else None,
             "kept_share": round(float((np.abs(today_errs) <= 1.0).mean()), 3)

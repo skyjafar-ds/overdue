@@ -71,6 +71,36 @@ def test_promise_cards_survive_the_rounding_boundary(tmp_path):
     assert (-1.1, "early") in verdicts
 
 
+def test_days_are_agency_local_not_utc():
+    """Regression: 'today' reset at 8pm Boston time because days were UTC.
+    An arrival at 00:30 UTC belongs to the previous Boston/Pacific day."""
+    from overdue.site import local_day
+
+    ts = 1784421000  # 2026-07-19T00:30:00Z
+    assert local_day(ts, "mbta") == "2026-07-18"   # 8:30pm ET on the 18th
+    assert local_day(ts, "bart") == "2026-07-18"   # 5:30pm PT on the 18th
+    noon = ts + 12 * 3600
+    assert local_day(noon, "mbta") == "2026-07-19"
+
+
+def test_freshness_units_are_named_and_consistent(tmp_path):
+    store = Store(tmp_path / "data")
+    ts = int(time.time())
+    rows = [_res({"5": 5.4, "10": 10.6}, truth=ts) for _ in range(30)]
+    rows += [_res({"5": 5.4}, unc=999, truth=ts) for _ in range(4)]  # untrusted
+    store.append_graded("mbta", rows, ts)
+    build_site_data(store, tmp_path / "site", meta={})
+    import json
+    fresh = json.loads((tmp_path / "site/data/freshness.json").read_text())
+    assert fresh["n_arrivals_window"] == 30          # trusted arrivals
+    assert fresh["n_promises_window"] == 60          # 2 samples each
+    assert fresh["n_resolutions_window"] == 34       # incl. wide-uncertainty
+    assert fresh["today"]["n_arrivals"] == 30
+    summary = json.loads((tmp_path / "site/data/summary.json").read_text())
+    b = summary["agencies"]["mbta"]
+    assert b["n_promises"] == sum(h["n"] for h in b["horizons"])
+
+
 def test_contract_rejects_impossible_payloads():
     ok_summary = {"agencies": {}}
     validate_site_data(ok_summary, [], {}, [], {})
